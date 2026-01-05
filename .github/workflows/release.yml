@@ -112,7 +112,14 @@ jobs:
           name: ${{ github.ref_name }}
           allowUpdates: true
           # Avoid name collisions across platforms (e.g. builder-debug.yml, latest.yml, *.blockmap).
-          artifacts: "artifacts/**/*.dmg,artifacts/**/*.exe,artifacts/**/*.AppImage"
+          artifacts: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.AppImage
           artifactErrorsFailBuild: true
           generateReleaseNotes: true
           prerelease: ${{ contains(github.ref_name, 'beta') }}
+          # In practice GitHub can return 404 when trying to "update" an existing asset by id.
+          # Removing old assets first avoids the update-asset code path and is more reliable.
+          removeArtifacts: true
+          replacesArtifacts: false
