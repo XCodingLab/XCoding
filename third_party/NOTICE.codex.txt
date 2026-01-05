@@ -1,0 +1,13 @@
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This product bundles the Codex CLI binary from the open-source Codex project.
+
+Upstream license: Apache License 2.0
+See: https://www.apache.org/licenses/LICENSE-2.0
+
+Upstream NOTICE:
+This project includes code derived from Ratatui (MIT License).
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+

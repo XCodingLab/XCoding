@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            builderPlatform: mac
+            arch: arm64
+            target: dmg
+          - os: macos-15-intel
+            platform: mac
+            builderPlatform: mac
+            arch: x64
+            target: dmg
+          - os: windows-latest
+            platform: win
+            builderPlatform: win
+            arch: x64
+            target: nsis
+          - os: ubuntu-latest
+            platform: linux
+            builderPlatform: linux
+            arch: x64
+            target: AppImage
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      # Avoid GitHub API rate limits when fetching Codex binary.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Optional: override Codex CLI version. Fallback to assets/codex/version.txt.
+      CODEX_VERSION: ${{ secrets.CODEX_VERSION || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack (pnpm)
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@10 --activate
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: true
+
+      - name: Fallback install pnpm if missing
+        shell: bash
+        run: |
+          if ! command -v pnpm >/dev/null 2>&1; then
+            npm install -g pnpm@10
+          fi
+          pnpm -v
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Build renderer + main
+        shell: bash
+        run: pnpm build
+
+      - name: Package ${{ matrix.platform }} ${{ matrix.arch }}
+        shell: bash
+        run: pnpm exec electron-builder --${{ matrix.builderPlatform }} ${{ matrix.target }} --${{ matrix.arch }} --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcoding-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.blockmap
+            dist/*.yml
+
+  github_release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create/update GitHub Release and upload assets
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          allowUpdates: true
+          # Avoid name collisions across platforms (e.g. builder-debug.yml, latest.yml, *.blockmap).
+          artifacts: "artifacts/**/*.dmg,artifacts/**/*.exe,artifacts/**/*.AppImage"
+          artifactErrorsFailBuild: true
+          generateReleaseNotes: true
+          prerelease: ${{ contains(github.ref_name, 'beta') }}

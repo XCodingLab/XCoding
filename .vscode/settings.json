@@ -1,0 +1,15 @@
+{
+  "files.watcherExclude": {
+    "**/reference/**": true
+  },
+  "search.exclude": {
+    "**/reference/**": true
+  },
+  "git.ignoredRepositories": ["reference/vscode", "reference/EnsoAI"],
+  "git.autoRepositoryDetection": "openEditors",
+  "cSpell.words": [
+    "msvc",
+    "xcoding",
+    "xhigh"
+  ]
+}
