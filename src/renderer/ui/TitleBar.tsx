@@ -98,36 +98,17 @@ export default function TitleBar({
 }: Props) {
   const { t } = useI18n();
   const effectiveTitle = title ?? t("appTitle");
-  const showCustomButtons = navigator.userAgent.toLowerCase().includes("windows") || navigator.userAgent.toLowerCase().includes("linux");
-  const isMac = navigator.userAgent.toLowerCase().includes("mac");
+  const ua = navigator.userAgent.toLowerCase();
+  const isWindows = ua.includes("windows");
+  const isLinux = ua.includes("linux");
+  const isMac = ua.includes("mac");
+  const showCustomButtons = isWindows || isLinux;
   return (
     <div
       className="flex h-10 items-center justify-between border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-titleBar-activeBackground)] px-2 text-xs text-[var(--vscode-titleBar-activeForeground)]"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {showCustomButtons ? (
-          <div className="flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-            <button
-              className="h-3 w-3 rounded-full bg-red-500/90 hover:bg-red-500"
-              onClick={() => void window.xcoding.window.close()}
-              title={t("windowClose")}
-              type="button"
-            />
-            <button
-              className="h-3 w-3 rounded-full bg-yellow-500/90 hover:bg-yellow-500"
-              onClick={() => void window.xcoding.window.minimize()}
-              title={t("windowMinimize")}
-              type="button"
-            />
-            <button
-              className="h-3 w-3 rounded-full bg-green-500/90 hover:bg-green-500"
-              onClick={() => void window.xcoding.window.maximizeToggle()}
-              title={t("windowMaximize")}
-              type="button"
-            />
-          </div>
-        ) : null}
         {isMac ? null : <div className="min-w-0 truncate text-[11px] text-[var(--vscode-titleBar-activeForeground)]">{effectiveTitle}</div>}
       </div>
 
@@ -184,6 +165,35 @@ export default function TitleBar({
           <ToolbarButton title={t("toggleLanguage")} onClick={onToggleLanguage}>
             {languageLabel ?? t("languageToggleDefault")}
           </ToolbarButton>
+        ) : null}
+
+        {showCustomButtons ? (
+          <div className="ml-2 flex items-stretch overflow-hidden rounded border border-[var(--vscode-panel-border)]">
+            <button
+              className="flex h-7 w-10 items-center justify-center text-[12px] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+              onClick={() => void window.xcoding.window.minimize()}
+              title={t("windowMinimize")}
+              type="button"
+            >
+              —
+            </button>
+            <button
+              className="flex h-7 w-10 items-center justify-center text-[12px] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+              onClick={() => void window.xcoding.window.maximizeToggle()}
+              title={t("windowMaximize")}
+              type="button"
+            >
+              {isWindows ? "▢" : "⬜"}
+            </button>
+            <button
+              className="flex h-7 w-10 items-center justify-center text-[12px] hover:bg-red-500/80 hover:text-white"
+              onClick={() => void window.xcoding.window.close()}
+              title={t("windowClose")}
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
         ) : null}
       </div>
     </div>

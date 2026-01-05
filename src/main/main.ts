@@ -1,6 +1,6 @@
 import { BrowserView, BrowserWindow, Menu, app, clipboard, dialog, globalShortcut, ipcMain, net, protocol, screen, shell } from "electron";
 import path from "node:path";
-import { homedir } from "node:os";
+import { EOL, homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import type { IPty } from "node-pty";
 import * as pty from "node-pty";
@@ -221,6 +221,9 @@ let projectsState: ProjectsState = {
 };
 
 function createWindow(): BrowserWindow {
+  const shouldOpenDevTools =
+    !app.isPackaged || process.env.XCODING_OPEN_DEVTOOLS === "1" || process.argv.includes("--open-devtools");
+
   const baseWidth = 1280;
   const baseHeight = 800;
   const scale = 1.2;
@@ -266,18 +269,18 @@ function createWindow(): BrowserWindow {
     // Support optional slot bootstrap when opening additional windows from the app.
     const slot = activeSlotByWindowId.get(win.id) ?? 1;
     win.loadURL(`${DEV_SERVER_URL}?slot=${slot}&windowMode=multi`);
-    win.webContents.openDevTools({ mode: "detach" });
+    if (shouldOpenDevTools) win.webContents.openDevTools({ mode: "detach" });
     if (!mainWindow) mainWindow = win;
     return win;
   }
 
   // In production build, Vite outputs to `dist/` and main process to `dist/main/`.
-  // In production build, Vite outputs to `dist/` and main process to `dist/main/`.
-// We pass initial slot via query string so renderer can bootstrap.
-const slot = activeSlotByWindowId.get(win.id) ?? 1;
-win.loadFile(path.join(__dirname, "../index.html"), { search: `?slot=${slot}&windowMode=multi` });
-if (!mainWindow) mainWindow = win;
-return win;
+  // We pass initial slot via query string so renderer can bootstrap.
+  const slot = activeSlotByWindowId.get(win.id) ?? 1;
+  void win.loadFile(path.join(__dirname, "../index.html"), { search: `?slot=${slot}&windowMode=multi` });
+  if (shouldOpenDevTools) win.webContents.openDevTools({ mode: "detach" });
+  if (!mainWindow) mainWindow = win;
+  return win;
 }
 
 // macOS 菜单显示名称 & 关于面板名称
@@ -603,7 +606,7 @@ function ensureCodexBridge() {
   if (codexBridge) codexBridge.dispose();
   codexHomePath = desiredCodexHome;
   codexBridge = new CodexBridge({
-    clientInfo: { name: "xcoding-ide", title: "Xcoding IDE", version: app.getVersion() },
+    clientInfo: { name: "xcoding-ide", title: "XCoding", version: app.getVersion() },
     defaultCwd: process.cwd(),
     codexHome: desiredCodexHome,
     codexExecutablePath: resolvedExe.path,
@@ -855,6 +858,47 @@ function ensureProjectService(projectId: string, projectPath: string) {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
   });
 
+  const shouldLogService =
+    app.isPackaged || process.env.XCODING_SERVICE_LOG === "1" || process.argv.includes("--service-log");
+
+  let serviceLogStream: fs.WriteStream | null = null;
+  if (shouldLogService) {
+    try {
+      const logDir = path.join(app.getPath("userData"), "logs");
+      fs.mkdirSync(logDir, { recursive: true });
+      const safeProjectId = projectId.replace(/[^a-zA-Z0-9._-]+/g, "_");
+      const logFile = path.join(logDir, `projectService-${safeProjectId}-${child.pid}.log`);
+      serviceLogStream = fs.createWriteStream(logFile, { flags: "a" });
+      serviceLogStream.write(`[${new Date().toISOString()}] spawn pid=${child.pid}${EOL}`);
+      serviceLogStream.write(`[${new Date().toISOString()}] projectId=${projectId}${EOL}`);
+      serviceLogStream.write(`[${new Date().toISOString()}] projectPath=${projectPath}${EOL}`);
+      serviceLogStream.write(`[${new Date().toISOString()}] servicePath=${servicePath}${EOL}`);
+    } catch {
+      serviceLogStream = null;
+    }
+  }
+
+  const writeServiceLog = (kind: "stdout" | "stderr", chunk: unknown) => {
+    if (!serviceLogStream) return;
+    try {
+      const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk ?? "");
+      if (!text) return;
+      const ts = new Date().toISOString();
+      const normalized = text.replace(/\r\n/g, "\n");
+      for (const line of normalized.split("\n")) {
+        if (!line) continue;
+        serviceLogStream.write(`[${ts}] ${kind}: ${line}${EOL}`);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  if (shouldLogService) {
+    child.stdout?.on("data", (d) => writeServiceLog("stdout", d));
+    child.stderr?.on("data", (d) => writeServiceLog("stderr", d));
+  }
+
   const pending = new Map<string, (res: ProjectServiceResponse) => void>();
 
   child.on("message", (msg: any) => {
@@ -868,10 +912,29 @@ function ensureProjectService(projectId: string, projectPath: string) {
     pending.delete((msg as any).id);
     handler(msg);
   });
-  child.on("exit", () => {
+  child.on("exit", (code, signal) => {
+    if (serviceLogStream) {
+      try {
+        serviceLogStream.write(`[${new Date().toISOString()}] exit code=${code ?? "null"} signal=${signal ?? "null"}${EOL}`);
+        serviceLogStream.end();
+      } catch {
+        // ignore
+      }
+      serviceLogStream = null;
+    }
     pending.forEach((handler, id) => handler({ id, ok: false, error: "service_exited" }));
     pending.clear();
     projectServices.delete(projectId);
+  });
+  child.on("error", (err) => {
+    if (!serviceLogStream) return;
+    try {
+      serviceLogStream.write(
+        `[${new Date().toISOString()}] process_error: ${err instanceof Error ? err.stack || err.message : String(err)}${EOL}`
+      );
+    } catch {
+      // ignore
+    }
   });
 
   const entry = { child, pending };

@@ -4,7 +4,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import chokidar, { type FSWatcher } from "chokidar";
+import type { FSWatcher } from "chokidar";
 import ts from "typescript";
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, type MessageConnection } from "vscode-jsonrpc/node";
 import type { Diagnostic } from "vscode-languageserver-protocol";
@@ -138,6 +138,7 @@ let gitignore: GitignoreMatcher | null = null;
 let gitStatusCache: { at: number; entries: Record<string, string> } | null = null;
 let rgPath: string | null = null;
 let rgChecked = false;
+let chokidarModule: typeof import("chokidar") | null = null;
 
 type LspLanguage = "python" | "go";
 
@@ -591,24 +592,39 @@ function sendEvent(payload: unknown) {
   if (typeof process.send === "function") process.send({ type: "event", payload });
 }
 
+function ensureChokidar(): typeof import("chokidar") {
+  if (chokidarModule) return chokidarModule;
+  // Resolve from the app root so it works in both dev and packaged (asar) builds.
+  // dist/main/projectService.cjs -> app root package.json (../..)
+  const req = createRequire(path.join(__dirname, "..", "..", "package.json"));
+  chokidarModule = req("chokidar") as typeof import("chokidar");
+  return chokidarModule;
+}
+
 function ensureWatcherStarted() {
   if (!root) throw new Error("not_initialized");
   if (watcher) return;
-  watcher = chokidar.watch(root, {
-    ignoreInitial: true,
-    persistent: true,
-    ignored: [/[/\\\\]\.git([/\\\\]|$)/, /[/\\\\]node_modules([/\\\\]|$)/, /[/\\\\]dist([/\\\\]|$)/]
-  });
-  watcher.on("all", (event, absPath) => {
-    if (watcherPaused || !root) return;
-    gitStatusCache = null;
-    const rel = path.relative(root, absPath).replace(/[\\\\]+/g, "/");
-    if (rel.startsWith("..")) return;
-    sendEvent({ type: "watcher", event, path: rel, timestamp: Date.now() });
-  });
-  watcher.on("error", (error) => {
-    sendEvent({ type: "watcher:error", error: String(error) });
-  });
+  try {
+    const chokidar = ensureChokidar();
+    watcher = chokidar.watch(root, {
+      ignoreInitial: true,
+      persistent: true,
+      ignored: [/[/\\\\]\.git([/\\\\]|$)/, /[/\\\\]node_modules([/\\\\]|$)/, /[/\\\\]dist([/\\\\]|$)/]
+    });
+    watcher.on("all", (event, absPath) => {
+      if (watcherPaused || !root) return;
+      gitStatusCache = null;
+      const rel = path.relative(root, absPath).replace(/[\\\\]+/g, "/");
+      if (rel.startsWith("..")) return;
+      sendEvent({ type: "watcher", event, path: rel, timestamp: Date.now() });
+    });
+    watcher.on("error", (error) => {
+      sendEvent({ type: "watcher:error", error: String(error) });
+    });
+  } catch (e) {
+    sendEvent({ type: "watcher:error", error: e instanceof Error ? e.message : String(e) });
+    watcher = null;
+  }
 }
 
 async function stopWatcher() {
@@ -639,7 +655,7 @@ process.on("message", (msg: RequestMessage) => {
 
     if (msg.type === "watcher:start") {
       ensureWatcherStarted();
-      reply({ id: msg.id, ok: true, result: { watching: true } });
+      reply({ id: msg.id, ok: true, result: { watching: Boolean(watcher) } });
       return;
     }
 

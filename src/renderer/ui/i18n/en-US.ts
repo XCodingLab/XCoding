@@ -1,5 +1,5 @@
 export const enUS = {
-  appTitle: "Xcoding IDE",
+  appTitle: "XCoding",
   switcher: "Projects",
   explorer: "Explorer",
   files: "Files",

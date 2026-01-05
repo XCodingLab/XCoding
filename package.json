@@ -11,9 +11,9 @@
     "postinstall": "node scripts/fix-node-pty-perms.cjs",
     "setup:codex": "node scripts/fetch-codex-binary.cjs",
     "dev": "concurrently -k \"vite\" \"pnpm run main:watch\" \"wait-on http://127.0.0.1:5173 file:dist/main/main.cjs && pnpm run electron:dev\"",
-    "main:watch": "tsup --config tsup.config.ts --watch --onSuccess \"cp src/main/preload.cjs dist/main/preload.cjs\"",
-    "electron:dev": "env -u ELECTRON_RUN_AS_NODE electron .",
-    "build": "vite build && tsup --config tsup.config.ts && cp src/main/preload.cjs dist/main/preload.cjs",
+    "main:watch": "tsup --config tsup.config.ts --watch --onSuccess \"node scripts/copy-preload.cjs\"",
+    "electron:dev": "node scripts/electron-dev.cjs .",
+    "build": "vite build && tsup --config tsup.config.ts && node scripts/copy-preload.cjs",
     "start": "electron .",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -76,7 +76,13 @@
       "esbuild",
       "node-pty",
       "@vscode/ripgrep"
-    ]
+    ],
+    "overrides": {
+      "punycode": "^2.3.1",
+      "braces": "^3.0.3",
+      "micromatch": "^4.0.8",
+      "semver": "^7.7.1"
+    }
   },
   "build": {
     "appId": "com.xcoding.app",
@@ -103,6 +109,12 @@
       "!**/examples/**",
       "!**/docs/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/codex",
+        "to": "codex"
+      }
     ],
     "afterPack": "build/afterPack.cjs",
     "directories": {

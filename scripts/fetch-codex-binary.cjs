@@ -246,6 +246,15 @@ function usageAndExit(message) {
 }
 
 async function main() {
+  const skip =
+    String(process.env.XCODING_SKIP_CODEX_SETUP || process.env.XCODING_SKIP_CODEX_DOWNLOAD || "")
+      .trim()
+      .toLowerCase() === "1";
+  if (skip) {
+    console.log("[fetch:codex] Skipped (XCODING_SKIP_CODEX_SETUP=1).");
+    return;
+  }
+
   const platform = process.platform;
   const arch = process.arch;
   const exeName = isWindows(platform) ? "codex.exe" : "codex";

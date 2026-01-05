@@ -1,5 +1,5 @@
 export const zhCN = {
-  appTitle: "Xcoding IDE",
+  appTitle: "XCoding",
   switcher: "项目",
   explorer: "资源管理器",
   files: "文件",
