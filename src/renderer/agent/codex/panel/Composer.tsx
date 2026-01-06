@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref, type Re
 import { createPortal } from "react-dom";
 import type { CodexMode, ComposerAttachment, ReasoningEffort } from "./types";
 import StatusModal from "./StatusModal";
-import { useI18n } from "../i18n";
+import { useI18n } from "../../../ui/i18n";
 
 const localImageDataUrlCache = new Map<string, string>();
 

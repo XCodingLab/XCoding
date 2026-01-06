@@ -7,11 +7,109 @@ export const MONACO_URI_SCHEME = "xcoding";
 // Configure @monaco-editor/react to use our monaco instance.
 loader.config({ monaco });
 
+const ensuredLanguages = new Map<string, Promise<void>>();
+let diffLanguageRegistered = false;
+
+function ensureDiffLanguageRegistered() {
+  if (diffLanguageRegistered) return;
+  diffLanguageRegistered = true;
+  try {
+    monaco.languages.register({ id: "diff" });
+    monaco.languages.setMonarchTokensProvider("diff", {
+      tokenizer: {
+        root: [
+          // HelloAgents apply_patch markers (*** Begin Patch, *** Update File: ...)
+          [/^\\*\\*\\*\\s*(Begin Patch|End Patch)\\s*$/, "diff.patchHeader"],
+          [/^\\*\\*\\*\\s*(Add File|Update File|Delete File):\\s+.+$/, "diff.patchHeader"],
+          [/^\\*\\*\\*\\s*Move to:\\s+.+$/, "diff.patchHeader"],
+          [/^\\*\\*\\*\\s*End of File\\s*$/, "diff.patchHeader"],
+          [/^\\*\\*\\*\\s.+$/, "diff.patchHeader"],
+
+          // Git diff meta lines
+          [/^diff --git\\s.+$/, "diff.meta"],
+          [/^index\\s.+$/, "diff.meta"],
+          [/^(new file mode|deleted file mode|old mode|new mode)\\s.+$/, "diff.meta"],
+          [/^(similarity index|dissimilarity index)\\s.+$/, "diff.meta"],
+          [/^rename (from|to)\\s.+$/, "diff.meta"],
+          [/^copy (from|to)\\s.+$/, "diff.meta"],
+          [/^Binary files\\s.+$/, "diff.meta"],
+          [/^GIT binary patch\\s*$/, "diff.meta"],
+          [/^(literal|delta)\\s.+$/, "diff.meta"],
+          [/^\\\\ No newline at end of file\\s*$/, "diff.comment"],
+
+          // File headers / hunks
+          [/^(---|\\+\\+\\+)\\s.+$/, "diff.fileHeader"],
+          [/^@@.*$/, "diff.hunkHeader"],
+
+          // Added/removed lines (note: file headers are matched above)
+          [/^\\+.*$/, "diff.add"],
+          [/^-.*$/, "diff.delete"],
+
+          // Context lines (space prefix)
+          [/^\\s.*$/, "diff.context"]
+        ]
+      }
+    } as any);
+  } catch {
+    // ignore
+  }
+}
+
+export function ensureMonacoLanguage(languageId: string) {
+  const id = String(languageId ?? "").trim();
+  if (!id || id === "plaintext") return Promise.resolve();
+  const existing = ensuredLanguages.get(id);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    if (id === "diff") {
+      ensureDiffLanguageRegistered();
+      return;
+    }
+    if (id === "yaml") {
+      await import("monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution");
+      return;
+    }
+    if (id === "shell") {
+      await import("monaco-editor/esm/vs/basic-languages/shell/shell.contribution");
+      return;
+    }
+    if (id === "python") {
+      await import("monaco-editor/esm/vs/basic-languages/python/python.contribution");
+      return;
+    }
+    if (id === "go") {
+      await import("monaco-editor/esm/vs/basic-languages/go/go.contribution");
+      return;
+    }
+    if (id === "markdown") {
+      await import("monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution");
+      return;
+    }
+    if (id === "java") {
+      await import("monaco-editor/esm/vs/basic-languages/java/java.contribution");
+      return;
+    }
+  })();
+
+  ensuredLanguages.set(id, promise);
+  return promise;
+}
+
 // Define a Monaco theme aligned with our VS Code-like CSS tokens in `src/renderer/styles.css`.
 monaco.editor.defineTheme(MONACO_THEME_NAME, {
   base: "vs-dark",
   inherit: true,
-  rules: [],
+  rules: [
+    { token: "diff.add", foreground: "89d185", background: "0f2a12" },
+    { token: "diff.delete", foreground: "f14c4c", background: "2a0f0f" },
+    { token: "diff.hunkHeader", foreground: "4fc1ff", fontStyle: "bold" },
+    { token: "diff.fileHeader", foreground: "569cd6", fontStyle: "bold" },
+    { token: "diff.patchHeader", foreground: "c586c0", fontStyle: "bold" },
+    { token: "diff.comment", foreground: "6a9955", fontStyle: "italic" },
+    { token: "diff.meta", foreground: "9d9d9d", fontStyle: "italic" },
+    { token: "diff.context", foreground: "cccccc" }
+  ],
   colors: {
     "editor.background": "#1e1e1e",
     "editor.foreground": "#cccccc",
@@ -68,15 +166,18 @@ monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
 });
 
 // Preload a small set of languages so tokenizers and workers are ready on first open.
-const preloadLanguages = ["typescript", "javascript", "json", "markdown", "css", "html", "python", "go"];
-for (const lang of preloadLanguages) {
-  try {
-    const model = monaco.editor.createModel("", lang);
-    model.dispose();
-  } catch {
-    // ignore unsupported languages
+const preloadLanguages = ["typescript", "javascript", "json", "markdown", "css", "html", "python", "go", "java"];
+void (async () => {
+  for (const lang of preloadLanguages) {
+    try {
+      await ensureMonacoLanguage(lang);
+      const model = monaco.editor.createModel("", lang);
+      model.dispose();
+    } catch {
+      // ignore unsupported languages
+    }
   }
-}
+})();
 
 export { monaco };
 
@@ -150,7 +251,7 @@ function toMonacoRange(range?: { start?: { line?: number; character?: number }; 
   return new monaco.Range(startLine, startCol, endLine, endCol);
 }
 
-async function lspRequest(language: "python" | "go", relPath: string, method: string, params: any) {
+async function lspRequest(language: "python", relPath: string, method: string, params: any) {
   try {
     const slot = getActiveSlot();
     const res = await (window as any).xcoding?.project?.lspRequest?.({ slot, language, method, path: relPath, params });
@@ -228,7 +329,7 @@ function lspMarkupToString(contents: any): string {
   return "";
 }
 
-function registerLspLanguageProviders(language: "python" | "go") {
+function registerLspLanguageProviders(language: "python") {
   monaco.languages.registerCompletionItemProvider(language, {
     triggerCharacters: [".", ":", "_"],
     async provideCompletionItems(model, position) {
@@ -317,4 +418,3 @@ function registerLspLanguageProviders(language: "python" | "go") {
 }
 
 registerLspLanguageProviders("python");
-registerLspLanguageProviders("go");

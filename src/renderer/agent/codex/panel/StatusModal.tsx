@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useI18n } from "../i18n";
+import { useI18n } from "../../../ui/i18n";
 
 // Keep aligned with Codex CLI's TokenUsage.percent_of_context_window_remaining():
 // reference/codex/codex-rs/protocol/src/protocol.rs

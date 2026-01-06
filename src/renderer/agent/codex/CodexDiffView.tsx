@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useI18n } from "./i18n";
+import { useI18n } from "../../ui/i18n";
 
 type DiffRow =
   | { kind: "meta"; text: string }

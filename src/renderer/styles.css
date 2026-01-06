@@ -310,6 +310,123 @@ body.xcoding-tab-dragging .monaco-editor * {
   pointer-events: none !important;
 }
 
+/* Diff/Patch highlighting */
+.monaco-editor .xcoding-diff-line-add {
+  background-color: rgba(137, 209, 133, 0.14) !important;
+  background-color: color-mix(in srgb, #89d185 14%, transparent) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #89d185 70%, transparent);
+}
+
+.monaco-editor .xcoding-diff-line-remove {
+  background-color: rgba(241, 76, 76, 0.14) !important;
+  background-color: color-mix(in srgb, #f14c4c 14%, transparent) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #f14c4c 70%, transparent);
+}
+
+.monaco-editor .xcoding-diff-line-hunk {
+  background-color: rgba(0, 127, 212, 0.12) !important;
+  background-color: color-mix(in srgb, var(--vscode-focusBorder) 12%, transparent) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--vscode-focusBorder) 60%, transparent);
+}
+
+.monaco-editor .xcoding-diff-line-file {
+  background-color: rgba(0, 127, 212, 0.08) !important;
+  background-color: color-mix(in srgb, var(--vscode-focusBorder) 8%, transparent) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--vscode-focusBorder) 35%, transparent);
+}
+
+.monaco-editor .xcoding-diff-line-meta,
+.monaco-editor .xcoding-diff-line-comment {
+  background-color: rgba(157, 157, 157, 0.09) !important;
+  background-color: color-mix(in srgb, var(--vscode-descriptionForeground) 9%, transparent) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--vscode-descriptionForeground) 35%, transparent);
+}
+
+.monaco-editor .xcoding-diff-line-patch {
+  background-color: rgba(197, 134, 192, 0.12) !important;
+  background-color: color-mix(in srgb, #c586c0 12%, transparent) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #c586c0 55%, transparent);
+}
+
+.xcoding-diff-code-line {
+  display: inline-block;
+  min-width: 100%;
+  width: max-content;
+}
+
+.xcoding-diff-code-line-add {
+  color: color-mix(in srgb, #89d185 90%, white);
+  background-color: rgba(137, 209, 133, 0.12);
+  background-color: color-mix(in srgb, #89d185 12%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #89d185 70%, transparent);
+}
+
+.xcoding-diff-code-line-remove {
+  color: color-mix(in srgb, #f14c4c 90%, white);
+  background-color: rgba(241, 76, 76, 0.12);
+  background-color: color-mix(in srgb, #f14c4c 12%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #f14c4c 70%, transparent);
+}
+
+.xcoding-diff-code-line-hunk,
+.xcoding-diff-code-line-file {
+  color: color-mix(in srgb, var(--vscode-focusBorder) 85%, white);
+  background-color: rgba(0, 127, 212, 0.1);
+  background-color: color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--vscode-focusBorder) 55%, transparent);
+}
+
+.xcoding-diff-code-line-meta,
+.xcoding-diff-code-line-comment {
+  color: var(--vscode-descriptionForeground);
+  background-color: rgba(157, 157, 157, 0.08);
+  background-color: color-mix(in srgb, var(--vscode-descriptionForeground) 8%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--vscode-descriptionForeground) 35%, transparent);
+}
+
+.xcoding-diff-code-line-patch {
+  color: #c586c0;
+  background-color: rgba(197, 134, 192, 0.1);
+  background-color: color-mix(in srgb, #c586c0 10%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #c586c0 55%, transparent);
+}
+
+/* Markdown readability (Codex transcript / preview) */
+.xcoding-markdown code {
+  color: color-mix(in srgb, var(--vscode-foreground) 92%, white);
+}
+
+.xcoding-markdown a {
+  color: color-mix(in srgb, #4fc1ff 92%, white);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, #4fc1ff 30%, transparent);
+  text-underline-offset: 2px;
+}
+
+.xcoding-markdown ol > li::marker {
+  color: color-mix(in srgb, #4fc1ff 92%, white);
+  font-weight: 700;
+}
+
+.xcoding-markdown strong {
+  color: color-mix(in srgb, var(--vscode-foreground) 95%, white);
+}
+
+.xcoding-markdown blockquote {
+  color: color-mix(in srgb, #89d185 90%, white);
+}
+
+.xcoding-inline-code {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.375rem;
+  line-height: 1.1;
+  vertical-align: baseline;
+  background: color-mix(in srgb, var(--vscode-descriptionForeground) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-descriptionForeground) 18%, transparent);
+  color: color-mix(in srgb, var(--vscode-foreground) 92%, white);
+}
+
 /* Scrollbars (VS Code-like dark) */
 * {
   scrollbar-width: thin;

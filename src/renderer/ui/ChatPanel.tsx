@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "./i18n";
 import TerminalView from "./TerminalView";
-import CodexPanel from "./CodexPanel";
+import { CodexPanel } from "../agent/codex";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 

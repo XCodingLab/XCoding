@@ -1,10 +1,5 @@
 // Shared types + tiny helpers extracted from CodexPanel to keep the main component readable.
 
-// Codex VS Code 插件（webview）中的模式枚举是：
-// - "read-only"    -> UI 显示 "Chat"
-// - "auto"         -> UI 显示 "Agent"
-// - "full-access"  -> UI 显示 "Agent (full access)"
-// 本地 IDE 侧严格沿用这三个值（不提供 "custom"）。
 export type CodexMode = "read-only" | "auto" | "full-access";
 
 export type ThreadSummary = {
@@ -83,12 +78,12 @@ export function loadMode(): CodexMode {
   const raw = localStorage.getItem(MODE_KEY);
   if (raw === "read-only" || raw === "auto" || raw === "full-access") return raw;
 
-  // Backward-compat: 旧实现里用 chat/agent/agentFull（或 plan/access/full）存储过。
+  // Backward-compat: previous versions stored chat/agent/agentFull (or plan/access/full).
   if (raw === "chat" || raw === "plan") return "read-only";
   if (raw === "agent" || raw === "access") return "auto";
   if (raw === "agentFull" || raw === "full") return "full-access";
 
-  // 插件默认更偏向 Agent（auto）。
+  // Default to Agent-like behavior (auto).
   return "auto";
 }
 
@@ -123,7 +118,7 @@ export function makeTurnOverrides(mode: CodexMode, writableRoot: string | undefi
         writableRoots: Array.from(new Set(mergedWritableRoots)),
         excludeSlashTmp: workspaceWritePolicy?.excludeSlashTmp ?? false,
         excludeTmpdirEnvVar: workspaceWritePolicy?.excludeTmpdirEnvVar ?? false,
-        // 注意：官方默认是 false；如果用户在 config.toml 打开了 network_access，则这里会跟随。
+        // Note: the upstream default is false; we follow config.toml's network_access when available.
         networkAccess: workspaceWritePolicy?.networkAccess ?? false
       }
     };

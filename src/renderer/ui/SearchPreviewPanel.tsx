@@ -1,7 +1,8 @@
 import { Editor, loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MONACO_THEME_NAME } from "../monacoSetup";
+import { ensureMonacoLanguage, MONACO_THEME_NAME } from "../monacoSetup";
+import { languageFromPath } from "../languageSupport";
 
 loader.config({ monaco });
 
@@ -86,17 +87,13 @@ export default function SearchPreviewPanel({ slot, path, line, query, matchCase 
   const language = useMemo(() => {
     if (!path) return "plaintext";
     const lower = path.toLowerCase();
-    if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "typescript";
-    if (lower.endsWith(".js") || lower.endsWith(".jsx")) return "javascript";
-    if (lower.endsWith(".json")) return "json";
-    if (lower.endsWith(".css") || lower.endsWith(".scss") || lower.endsWith(".less")) return "css";
-    if (lower.endsWith(".html")) return "html";
-    if (lower.endsWith(".md")) return "markdown";
-    if (lower.endsWith(".toml")) return "plaintext";
-    if (lower.endsWith(".go")) return "go";
-    if (lower.endsWith(".py")) return "python";
-    return "plaintext";
+    if (lower.endsWith(".scss") || lower.endsWith(".less")) return "css";
+    return languageFromPath(path);
   }, [path]);
+
+  useEffect(() => {
+    void ensureMonacoLanguage(language);
+  }, [language]);
 
   const modelUri = useMemo(() => {
     if (!path) return undefined;
