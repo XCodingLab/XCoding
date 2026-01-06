@@ -4,6 +4,8 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { MonacoCodeBlock } from "../agent/shared";
+import { isMustLanguage, parseFenceClassName } from "../languageSupport";
 import { useI18n } from "./i18n";
 
 type Props = {
@@ -108,17 +110,13 @@ export default function MarkdownPreviewView({ slot, path, projectRootPath, onOpe
           {children}
         </pre>
       ),
-      code: ({ className, children }: any) => {
-        const text = String(children ?? "");
-        const isBlock = text.includes("\n");
-        if (isBlock) {
-          return (
-            <code className={["block whitespace-pre", className || ""].join(" ")}>
-              {text.replace(/\n$/, "")}
-            </code>
-          );
-        }
-        return <code className="rounded bg-[rgba(255,255,255,0.08)] px-1 py-0.5 text-[12px]">{children}</code>;
+      code: ({ inline, className, children }: any) => {
+        const text = String(children ?? "").replace(/\n$/, "");
+        const isInline = Boolean(inline) || (!className && !text.includes("\n"));
+        if (isInline) return <code className="xcoding-inline-code font-mono text-[12px]">{text}</code>;
+        const languageId = parseFenceClassName(className);
+        if (!isMustLanguage(languageId)) return <code className={["block whitespace-pre font-mono", className || ""].join(" ").trim()}>{text}</code>;
+        return <MonacoCodeBlock code={text} languageId={languageId} className={className} />;
       },
       p: ({ children, ...props }: any) => (
         <p className="my-3 leading-6 text-[13px] text-[var(--vscode-foreground)]" {...props}>

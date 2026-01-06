@@ -1,6 +1,6 @@
 import { Bug, Network, Eye } from "lucide-react";
 import DiffView from "./DiffView";
-import CodexDiffView from "./CodexDiffView";
+import { CodexDiffView } from "../agent/codex";
 import FileEditor from "./FileEditor";
 import LayoutManager, { type LayoutMode, type PaneId, type SplitIntent } from "./LayoutManager";
 import MarkdownPreviewView from "./MarkdownPreviewView";

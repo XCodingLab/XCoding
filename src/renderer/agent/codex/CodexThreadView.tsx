@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
-import { extractPromptRequest } from "./codexPrompt";
-import { useI18n } from "./i18n";
+import { extractPromptRequest } from "./prompt";
+import { MonacoCodeBlock } from "../shared";
+import { isMustLanguage, parseFenceClassName } from "../../languageSupport";
+import { useI18n } from "../../ui/i18n";
 
 type ApprovalRequest = {
   rpcId: number;
@@ -72,6 +74,17 @@ function renderAgentModeLabel(mode: string) {
   return mode || "unknown";
 }
 
+function tryParseHelloAgentsBanner(text: string) {
+  const firstNewline = text.indexOf("\n");
+  const firstLine = (firstNewline === -1 ? text : text.slice(0, firstNewline)).trim();
+  const rest = firstNewline === -1 ? "" : text.slice(firstNewline + 1);
+  const m = firstLine.match(/^(✅|❓|⚠️|🚫|❌|💡)?【HelloAGENTS】- (.+)$/u);
+  if (!m) return null;
+  const icon = m[1] || "";
+  const title = m[2] || "";
+  return { icon, title, rest };
+}
+
 function getTurnStatusLabel(status: string | undefined) {
   const s = String(status ?? "").toLowerCase();
   if (!s) return { text: "unknown", kind: "unknown" as const };
@@ -128,6 +141,35 @@ function readReasoningText(item: any): string {
   const summaryText = typeof item?.summaryText === "string" ? item.summaryText : "";
   if (summaryText) return summaryText;
   return "";
+}
+
+function stripMarkdownInlineEmphasis(text: string) {
+  const s = String(text ?? "").trim();
+  if (!s) return "";
+  const wrappedBold = s.match(/^(?:\*\*|__)(.+)(?:\*\*|__)$/s);
+  if (wrappedBold) return String(wrappedBold[1] ?? "").trim();
+  const wrappedItalic = s.match(/^(?:\*|_)(.+)(?:\*|_)$/s);
+  if (wrappedItalic) return String(wrappedItalic[1] ?? "").trim();
+  return s;
+}
+
+function titleForReasoningItem(item: any) {
+  const raw = readReasoningText(item);
+  if (!raw) return "";
+  const firstLine = raw.split(/\r?\n/).map((v) => v.trim()).find(Boolean) ?? "";
+  if (!firstLine) return "";
+
+  // Only treat as a "title" when the model explicitly formats one.
+  // e.g. **Analyzing skills and plans** or __...__ or Markdown heading.
+  const isWrappedTitle = /^(?:\*\*|__).+(?:\*\*|__)$/s.test(firstLine);
+  const isHeadingTitle = /^#{1,6}\s+/.test(firstLine);
+  if (!isWrappedTitle && !isHeadingTitle) return "";
+
+  const headingStripped = firstLine.replace(/^#{1,6}\s+/, "").trim();
+  const unwrapped = stripMarkdownInlineEmphasis(headingStripped);
+  if (!unwrapped) return "";
+  // Avoid overly long titles (keep it "tool header"-like).
+  return unwrapped.length > 80 ? `${unwrapped.slice(0, 77)}…` : unwrapped;
 }
 
 function hasExpandableContent(type: string, item: any, approval?: ApprovalRequest) {
@@ -269,7 +311,7 @@ function computeFileChangeSummary(turn: TurnView) {
 function titleForItem(item: any) {
   const type = String(item?.type ?? "unknown");
   if (type === "turnThinking") return "Thinking";
-  if (type === "reasoning") return "Thinking";
+  if (type === "reasoning") return titleForReasoningItem(item) || "Thinking";
   if (type === "localToolCall") {
     const name = String(item?.name ?? "").trim();
     return name ? `Tool · ${name}` : "Tool";
@@ -489,7 +531,7 @@ export default function CodexThreadView({
 
   const markdownComponents = useMemo(() => {
     return {
-      p: ({ children }: any) => <p className="my-3 whitespace-pre-wrap text-[13px] leading-6 text-[var(--vscode-foreground)]">{children}</p>,
+      p: ({ children }: any) => <p className="my-3 whitespace-pre-wrap text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{children}</p>,
       a: ({ children, href }: any) => (
         <a
           className="text-[color-mix(in_srgb,var(--vscode-focusBorder)_90%,white)] underline decoration-white/20 underline-offset-2 hover:decoration-white/60"
@@ -500,11 +542,11 @@ export default function CodexThreadView({
           {children}
         </a>
       ),
-      ul: ({ children }: any) => <ul className="my-3 list-disc pl-6 text-[13px] leading-6 text-[var(--vscode-foreground)]">{children}</ul>,
-      ol: ({ children }: any) => <ol className="my-3 list-decimal pl-6 text-[13px] leading-6 text-[var(--vscode-foreground)]">{children}</ol>,
+      ul: ({ children }: any) => <ul className="my-3 list-disc pl-6 text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{children}</ul>,
+      ol: ({ children }: any) => <ol className="my-3 list-decimal pl-6 text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{children}</ol>,
       li: ({ children }: any) => <li className="my-1">{children}</li>,
       blockquote: ({ children }: any) => (
-        <blockquote className="my-3 border-l-2 border-[color-mix(in_srgb,var(--vscode-panel-border)_90%,white)] pl-3 text-[13px] leading-6 text-[var(--vscode-foreground)] opacity-90">
+        <blockquote className="my-3 border-l-2 border-[color-mix(in_srgb,var(--vscode-panel-border)_90%,white)] pl-3 text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)] opacity-90">
           {children}
         </blockquote>
       ),
@@ -512,11 +554,13 @@ export default function CodexThreadView({
       h2: ({ children }: any) => <h2 className="my-4 text-[16px] font-semibold text-[var(--vscode-foreground)]">{children}</h2>,
       h3: ({ children }: any) => <h3 className="my-3 text-[14px] font-semibold text-[var(--vscode-foreground)]">{children}</h3>,
       pre: ({ children }: any) => <pre className="my-3 overflow-auto rounded border border-token-border bg-black/20 p-3 text-[12px]">{children}</pre>,
-      code: ({ children }: any) => {
-        const text = String(children ?? "");
-        const isBlock = text.includes("\n");
-        if (isBlock) return <code className="block whitespace-pre">{text.replace(/\n$/, "")}</code>;
-        return <code className="rounded bg-white/10 px-1 py-0.5 text-[12px]">{children}</code>;
+      code: ({ inline, className, children }: any) => {
+        const text = String(children ?? "").replace(/\n$/, "");
+        const isInline = Boolean(inline) || (!className && !text.includes("\n"));
+        if (isInline) return <code className="xcoding-inline-code font-mono text-[12px]">{text}</code>;
+        const languageId = parseFenceClassName(className);
+        if (!isMustLanguage(languageId)) return <code className="block whitespace-pre font-mono">{text}</code>;
+        return <MonacoCodeBlock code={text} languageId={languageId} className={className} />;
       },
       hr: () => <hr className="my-4 border-t border-[var(--vscode-panel-border)]" />,
       table: ({ children }: any) => (
@@ -699,19 +743,15 @@ export default function CodexThreadView({
                   Review ↗
                 </button>
               </div>
-              <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
+              <div className="mt-1 grid gap-1">
                 {files.map((f) => {
                   const name = f.path.split("/").pop() ?? f.path;
                   return (
-                    <div key={f.path} className="flex items-center justify-between text-[12px] text-[var(--vscode-foreground)]">
-                      <div className="min-w-0 truncate">{name}</div>
+                    <div key={f.path} className="flex min-w-0 items-center justify-between gap-3 text-[12px] text-[var(--vscode-foreground)]">
+                      <div className="min-w-0 flex-1 truncate">{name}</div>
                       <div className="shrink-0 tabular-nums">
-                        {f.added ? <span className="text-[color-mix(in_srgb,#89d185_90%,white)]">{`+${f.added}`}</span> : null}
-                        {f.removed ? (
-                          <span className={f.added ? "ml-2 text-[color-mix(in_srgb,#f14c4c_90%,white)]" : "text-[color-mix(in_srgb,#f14c4c_90%,white)]"}>
-                            {`-${f.removed}`}
-                          </span>
-                        ) : null}
+                        <span className="text-[color-mix(in_srgb,#89d185_90%,white)]">{`+${Number(f.added ?? 0)}`}</span>
+                        <span className="ml-2 text-[color-mix(in_srgb,#f14c4c_90%,white)]">{`-${Number(f.removed ?? 0)}`}</span>
                       </div>
                     </div>
                   );
@@ -736,15 +776,41 @@ export default function CodexThreadView({
           const st = String(turn.status ?? "").toLowerCase();
           const isStreaming = st.includes("progress") || st === "inprogress" || st === "in_progress";
           const text = String(item?.text ?? "");
+          const ha = !isStreaming ? tryParseHelloAgentsBanner(text) : null;
           return (
             <div key={itemId} className="my-1 py-1">
               {isStreaming ? (
-                <pre className="whitespace-pre-wrap text-[13px] leading-6 text-[var(--vscode-foreground)]">{text}</pre>
+                <pre className="whitespace-pre-wrap text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{text}</pre>
               ) : (
-                <div className="text-[13px] leading-6 text-[var(--vscode-foreground)]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents as any}>
-                    {text}
-                  </ReactMarkdown>
+                <div className="text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">
+                  {ha ? (
+                    <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold">
+                      {ha.icon ? (
+                        <span
+                          className={[
+                            "shrink-0",
+                            ha.icon === "✅"
+                              ? "text-[color-mix(in_srgb,#89d185_90%,white)]"
+                              : ha.icon === "⚠️"
+                                ? "text-[color-mix(in_srgb,#cca700_90%,white)]"
+                                : ha.icon === "💡"
+                                  ? "text-[color-mix(in_srgb,var(--vscode-focusBorder)_90%,white)]"
+                                  : ha.icon === "🚫"
+                                    ? "text-[var(--vscode-descriptionForeground)]"
+                                    : "text-[color-mix(in_srgb,#f14c4c_90%,white)]"
+                          ].join(" ")}
+                        >
+                          {ha.icon}
+                        </span>
+                      ) : null}
+                      <span className="min-w-0 truncate text-[color-mix(in_srgb,var(--vscode-focusBorder)_85%,white)]">{ha.title}</span>
+                    </div>
+                  ) : null}
+                  <div className="xcoding-markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents as any}>
+                      {ha ? ha.rest.trimStart() : text}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               )}
             </div>

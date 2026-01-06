@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ReasoningEffort, WorkspaceWritePolicy } from "./types";
-import { useI18n } from "../i18n";
+import { useI18n } from "../../../ui/i18n";
 
 type Props = {
   open: boolean;

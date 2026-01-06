@@ -1,6 +1,6 @@
 import { Check, ChevronDown, ChevronUp, Circle, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
-import { useI18n } from "../../i18n";
+import { useI18n } from "../../../../ui/i18n";
 
 type PlanStep = { step: string; status: string };
 type Plan = { explanation?: string | null; steps: PlanStep[] };

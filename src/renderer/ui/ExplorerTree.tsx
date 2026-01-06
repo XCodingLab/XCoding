@@ -63,12 +63,12 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
   const [isUnbound, setIsUnbound] = useState(false);
   const [selectedRel, setSelectedRel] = useState<string>("");
   const [gitStatus, setGitStatus] = useState<Record<string, string>>({});
-  const [problems, setProblems] = useState<Record<string, number>>({});
   const [menu, setMenu] = useState<ContextMenuState>({ isOpen: false });
   const [inlineEdit, setInlineEdit] = useState<InlineEditState>({ mode: "none" });
   const inlineInputRef = useRef<HTMLInputElement | null>(null);
   const expandedRef = useRef(expanded);
   const cacheRef = useRef(cache);
+  const dirtyDirsRef = useRef<Set<string>>(new Set());
   const refreshQueueRef = useRef<Set<string>>(new Set());
   const refreshTimerRef = useRef<number | null>(null);
   const [renderLimit, setRenderLimit] = useState(450);
@@ -76,6 +76,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
   const becameVisibleRef = useRef<boolean>(isVisible);
 
   async function loadDir(dir: string) {
+    dirtyDirsRef.current.delete(dir);
     setCache((prev) => ({ ...prev, [dir]: { ...prev[dir], loading: true, error: undefined } }));
     const res = await window.xcoding.project.listDir({ slot, dir });
     if (!res.ok) {
@@ -113,7 +114,6 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
     setExpanded(new Set([""]));
     setSelectedRel("");
     setGitStatus({});
-    setProblems({});
     setMenu({ isOpen: false });
     setInlineEdit({ mode: "none" });
     void loadDir("");
@@ -145,20 +145,15 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
 
     const dispose = window.xcoding.events.onProjectEvent((evt) => {
       if (evt.projectId !== projectId) return;
-      if (evt.type === "lsp:diagnostics") {
-        const relPath = String((evt as any).relativePath ?? "");
-        if (!relPath) return;
-        const diagnostics = Array.isArray((evt as any).diagnostics) ? ((evt as any).diagnostics as any[]) : [];
-        const severity = diagnostics.reduce((acc, d) => Math.min(acc, Number(d.severity ?? 3)), 3);
-        setProblems((prev) => ({ ...prev, [relPath]: severity }));
-        return;
-      }
       if (evt.type !== "watcher") return;
       const rel = typeof (evt as any).path === "string" ? String((evt as any).path) : "";
       if (!rel) return;
       const dir = parentDir(rel);
       const isInTree = dir === "" || expandedRef.current.has(dir);
-      if (!isInTree) return;
+      if (!isInTree) {
+        if (dir && cacheRef.current[dir]?.entries) dirtyDirsRef.current.add(dir);
+        return;
+      }
       enqueue(dir);
     });
 
@@ -193,19 +188,25 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
   }, [inlineEdit]);
 
   function toggleDir(dir: string) {
+    const willExpand = !expanded.has(dir);
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(dir)) next.delete(dir);
       else next.add(dir);
       return next;
     });
-    if (!cache[dir]?.entries && !cache[dir]?.loading) void loadDir(dir);
+    if (!willExpand) return;
+    const wasDirty = dirtyDirsRef.current.has(dir);
+    if (wasDirty) dirtyDirsRef.current.delete(dir);
+    if ((wasDirty || !cache[dir]?.entries) && !cache[dir]?.loading) void loadDir(dir);
   }
 
   async function ensureDirExpanded(dir: string) {
     if (expanded.has(dir)) return;
     setExpanded((prev) => new Set(prev).add(dir));
-    if (!cache[dir]?.entries && !cache[dir]?.loading) await loadDir(dir);
+    const wasDirty = dirtyDirsRef.current.has(dir);
+    if (wasDirty) dirtyDirsRef.current.delete(dir);
+    if ((wasDirty || !cache[dir]?.entries) && !cache[dir]?.loading) await loadDir(dir);
   }
 
   function closeMenu() {
@@ -430,7 +431,6 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
           const isRename = inlineEdit.mode === "rename" && inlineEdit.rel === rel;
           const rowTextClass = row.ignored ? "text-[var(--vscode-descriptionForeground)] opacity-70" : "text-[var(--vscode-sideBar-foreground)]";
           const git = gitStatus[rel] ?? "";
-          const problemSeverity = problems[rel] ?? 0;
 
           return (
             <button
@@ -498,15 +498,6 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
                 <span className={["min-w-0 flex-1 truncate", rowTextClass].join(" ")}>{row.name}</span>
               )}
               <span className="ml-auto flex shrink-0 items-center gap-1">
-                {problemSeverity ? (
-                  <span
-                    className={[
-                      "h-2 w-2 rounded-full",
-                      problemSeverity === 1 ? "bg-red-500" : problemSeverity === 2 ? "bg-amber-500" : "bg-sky-500"
-                    ].join(" ")}
-                    title={problemSeverity === 1 ? t("errors") : problemSeverity === 2 ? t("warnings") : t("info")}
-                  />
-                ) : null}
                 {git ? (
                   <span
                     className={[
