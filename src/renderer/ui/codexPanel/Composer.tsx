@@ -769,7 +769,7 @@ export default function Composer({
         </div>
 
         {isPlusMenuOpen ? (
-          <div className="absolute bottom-full left-2 mb-2 w-[260px] overflow-hidden rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-lg">
+          <div className="absolute bottom-full left-2 z-50 mb-2 w-[260px] overflow-hidden rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-lg">
             <button
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
               type="button"
@@ -796,7 +796,7 @@ export default function Composer({
         ) : null}
 
         {isSlashMenuOpen ? (
-          <div className="absolute bottom-full left-2 mb-2 w-[360px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-2xl">
+          <div className="absolute bottom-full left-2 z-50 mb-2 w-[360px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-2xl">
             <div className="border-b border-[var(--vscode-panel-border)] p-2">
               <input
                 className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
@@ -861,7 +861,7 @@ export default function Composer({
 	            id="mode"
 	            value={mode}
 	            label={modeLabel}
-	            disabled={!projectRootPath || isBusy || isTurnInProgress}
+	            disabled={!projectRootPath || isBusy}
 	            compact={compactPickers}
 	            onChange={(v) => onSelectMode(v as CodexMode)}
 	            options={[
@@ -876,7 +876,7 @@ export default function Composer({
 	            id="model"
 	            value={model}
 	            label={modelLabel}
-	            disabled={!projectRootPath || isBusy || isTurnInProgress}
+	            disabled={!projectRootPath || isBusy}
 	            compact={compactPickers}
 	            fallbackIcon={<Cpu className="h-4 w-4" />}
 	            onChange={(v) => onSelectModel(v)}
@@ -901,7 +901,7 @@ export default function Composer({
 	            id="effort"
 	            value={effort}
 	            label={effortLabel}
-	            disabled={!projectRootPath || isBusy || isTurnInProgress}
+	            disabled={!projectRootPath || isBusy}
 	            compact={compactPickers}
 	            fallbackIcon={<Brain className="h-4 w-4" />}
 	            onChange={(v) => onSelectEffort(v as ReasoningEffort)}

@@ -54,6 +54,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
   const [isBusy, setIsBusy] = useState(false);
   const [version, setVersion] = useState(0);
   const [threadsVersion, setThreadsVersion] = useState(0);
+  const [scrollToBottomNonce, setScrollToBottomNonce] = useState(0);
   const [statusState, setStatusState] = useState<Store["status"]["state"]>("idle");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
@@ -107,6 +108,10 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
 
   const activeThread = activeThreadId ? storeRef.current.threadById[activeThreadId] ?? null : null;
   activeThreadIdRef.current = activeThreadId;
+  const setActiveThreadIdWithRef = (next: string | null) => {
+    activeThreadIdRef.current = next;
+    setActiveThreadId(next);
+  };
   // Key per "project slot" first, then path as extra disambiguation.
   // In xcoding-ide, "switching project" often means switching slots; two slots can even point to the same folder.
   // If we only key by path, switching slots may incorrectly reuse the previous slot's Codex UI state.
@@ -159,7 +164,10 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
       const raw = localStorage.getItem(activeThreadStorageKey);
       const persisted = raw && raw.trim() ? raw.trim() : null;
       hydratedActiveThreadIdRef.current = true;
-      if (persisted) setActiveThreadId(persisted);
+      if (persisted) {
+        activeThreadIdRef.current = persisted;
+        setActiveThreadId(persisted);
+      }
     } catch {
       // ignore
       hydratedActiveThreadIdRef.current = true;
@@ -211,7 +219,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
       } as const);
 
     setIsHistoryOpen((restored as any).isHistoryOpen ?? true);
-    setActiveThreadId(restored.activeThreadId);
+    setActiveThreadIdWithRef(restored.activeThreadId);
     setQuery(restored.query);
     setIsDiffPanelOpen(restored.isDiffPanelOpen);
     setInput(restored.input);
@@ -469,7 +477,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
       storeRef.current.threads = storeRef.current.threads.filter((t) => t.id !== threadId);
       delete storeRef.current.threadById[threadId];
       if (activeThreadId === threadId) {
-        setActiveThreadId(null);
+        setActiveThreadIdWithRef(null);
         setIsHistoryOpen(true);
       }
       bumpThreads();
@@ -483,7 +491,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
     if (!projectRootPath) return;
     // "New thread" should feel instant: only reset local UI state.
     // Defer `thread/start` until the first send (see sendTurn()).
-    setActiveThreadId(null);
+    setActiveThreadIdWithRef(null);
     setLoadingThreadId(null);
     setIsDiffPanelOpen(false);
     setInput("");
@@ -546,14 +554,14 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
     // If we already have the thread fully in memory, switch instantly.
     const cached = storeRef.current.threadById[threadId];
     if (cached?.turns?.length) {
-      setActiveThreadId(threadId);
+      setActiveThreadIdWithRef(threadId);
       setIsHistoryOpen(false);
       bump();
       void hydrateFromSession(cached);
       return;
     }
 
-    setActiveThreadId(threadId);
+    setActiveThreadIdWithRef(threadId);
     setIsHistoryOpen(false);
     setLoadingThreadId(threadId);
 
@@ -581,7 +589,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
       if (!thread?.id) throw new Error("thread_missing");
       const view = normalizeThread(thread);
       storeRef.current.threadById[view.id] = view;
-      setActiveThreadId(view.id);
+      setActiveThreadIdWithRef(view.id);
       setIsHistoryOpen(false);
       bump();
       void hydrateFromSession(view);
@@ -617,8 +625,10 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
         storeRef.current.threadById[view.id] = view;
         storeRef.current.threads = [view, ...storeRef.current.threads.filter((t) => t.id !== view.id)];
         threadId = view.id;
-        setActiveThreadId(view.id);
+        setActiveThreadIdWithRef(view.id);
       }
+      // Avoid dropping early `item/*` notifications during thread/turn startup (activeThreadId state may lag one render).
+      activeThreadIdRef.current = threadId;
 
       const effectiveCwd = activeThread?.cwd || projectRootPath;
       const overrides = makeTurnOverrides(mode, effectiveCwd, configSnapshot?.workspaceWrite ?? null);
@@ -682,6 +692,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
         }
         bump();
       }
+      setScrollToBottomNonce((v) => v + 1);
       setInput("");
       setAttachments([]);
       setIsPlusMenuOpen(false);
@@ -1249,10 +1260,24 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
 
   const activePlan = (() => {
     if (!activeThread) return null;
+    const normalizeStatus = (raw: unknown) => {
+      const s = String(raw ?? "").toLowerCase();
+      if (s === "inprogress" || s === "in_progress" || s.includes("progress")) return "in_progress";
+      if (s === "completed" || s === "complete" || s === "done" || s.includes("complete")) return "completed";
+      if (s === "pending") return "pending";
+      return "unknown";
+    };
+    const isPlanCompleted = (plan: any) => {
+      const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+      if (!steps.length) return false;
+      return steps.every((s: any) => normalizeStatus(s?.status) === "completed");
+    };
     for (let i = activeThread.turns.length - 1; i >= 0; i--) {
       const t = activeThread.turns[i];
       const plan = (t as any)?.plan;
-      if (plan && Array.isArray(plan.steps) && plan.steps.length) return { turnId: t.id, plan };
+      if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) continue;
+      if (isPlanCompleted(plan)) continue;
+      return { turnId: t.id, plan };
     }
     return null;
   })();
@@ -1328,6 +1353,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
             onApprovalDecision={onApprovalDecision}
             onOpenUrl={onOpenUrl}
             onOpenImage={onOpenImage}
+            scrollToBottomNonce={scrollToBottomNonce}
             onTurnApply={(turnId) => {
               if (!activeThread) return;
               void window.xcoding.codex.turnApply({ threadId: activeThread.id, turnId }).then((res) => {
@@ -1571,7 +1597,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
               storeRef.current.threadById[view.id] = view;
               storeRef.current.threads = [view, ...storeRef.current.threads.filter((t) => t.id !== view.id)];
               threadId = view.id;
-              setActiveThreadId(view.id);
+              setActiveThreadIdWithRef(view.id);
               bump();
             }
             const r = await window.xcoding.codex.reviewStart({ threadId, target });

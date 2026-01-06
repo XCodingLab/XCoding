@@ -1,10 +1,14 @@
-import React from "react";
-import { useI18n } from "./i18n";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { messages, useI18n, type Language } from "./i18n";
+import { createPortal } from "react-dom";
 
 type Props = {
   title?: string;
   centerTitle?: string;
   languageLabel?: string;
+  language?: Language;
+  onSetLanguage?: (language: Language) => void;
+  // Back-compat: if onSetLanguage is not provided, fall back to a simple toggle handler.
   onToggleLanguage?: () => void;
   isExplorerVisible?: boolean;
   isChatVisible?: boolean;
@@ -21,15 +25,18 @@ function ToolbarButton({
   title,
   onClick,
   active,
+  buttonRef,
   children
 }: {
   title: string;
   onClick?: () => void;
   active?: boolean;
+  buttonRef?: React.Ref<HTMLButtonElement>;
   children: React.ReactNode;
 }) {
   return (
     <button
+      ref={buttonRef}
       className={[
         "rounded px-2 py-1 text-[11px] text-[var(--vscode-titleBar-activeForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]",
         active ? "bg-[var(--vscode-toolbar-hoverBackground)]" : ""
@@ -81,10 +88,33 @@ function IconTerminal({ active }: { active: boolean }) {
   );
 }
 
+function IconLanguage() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M2.8 8h10.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path
+        d="M8 2.5c1.9 1.9 3 4 3 5.5s-1.1 3.6-3 5.5"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8 2.5c-1.9 1.9-3 4-3 5.5s1.1 3.6 3 5.5"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function TitleBar({
   title,
   centerTitle,
   languageLabel,
+  language,
+  onSetLanguage,
   onToggleLanguage,
   isExplorerVisible,
   isChatVisible,
@@ -96,13 +126,80 @@ export default function TitleBar({
   onViewModeChange,
   showExplorerToggle = true
 }: Props) {
-  const { t } = useI18n();
+  const { t, language: contextLanguage } = useI18n();
   const effectiveTitle = title ?? t("appTitle");
   const ua = navigator.userAgent.toLowerCase();
   const isWindows = ua.includes("windows");
   const isLinux = ua.includes("linux");
   const isMac = ua.includes("mac");
   const showCustomButtons = isWindows || isLinux;
+  const canShowLanguageMenu = Boolean(onSetLanguage || onToggleLanguage);
+  const currentLanguage = (language ?? contextLanguage) as Language;
+  const languageButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const [languageMenuStyle, setLanguageMenuStyle] = useState<{ left: number; top: number; minWidth: number } | null>(null);
+  const [languageQuery, setLanguageQuery] = useState("");
+
+  const languageButtonText = useMemo(() => {
+    const base = String(currentLanguage || "").split("-")[0] || String(currentLanguage || "");
+    const trimmed = base.trim();
+    return trimmed ? trimmed.toUpperCase() : "LANG";
+  }, [currentLanguage]);
+
+  const languageOptions = useMemo(
+    () => {
+      const knownLabel = (lang: Language) => {
+        if (lang === "en-US") return t("languageEnglish");
+        if (lang === "zh-CN") return t("languageChinese");
+        return "";
+      };
+      const codes = (Object.keys(messages) as Language[]).slice().sort((a, b) => a.localeCompare(b));
+      return codes.map((value) => {
+        const label = knownLabel(value) || value;
+        return { value, label, code: value };
+      });
+    },
+    [t]
+  );
+
+  const filteredLanguageOptions = useMemo(() => {
+    const q = languageQuery.trim().toLowerCase();
+    if (!q) return languageOptions;
+    return languageOptions.filter((opt) => opt.value.toLowerCase().includes(q) || opt.label.toLowerCase().includes(q));
+  }, [languageOptions, languageQuery]);
+
+  const showLanguageSearch = languageOptions.length >= 6;
+
+  useEffect(() => {
+    if (!languageMenuOpen) {
+      setLanguageMenuStyle(null);
+      setLanguageQuery("");
+      return;
+    }
+    const btn = languageButtonRef.current;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const margin = 8;
+    const minWidth = Math.max(120, Math.round(r.width));
+    const left = Math.min(Math.max(margin, Math.round(r.right - minWidth)), Math.max(margin, window.innerWidth - margin - minWidth));
+    const top = Math.round(r.bottom + 6);
+    setLanguageMenuStyle({ left, top, minWidth });
+  }, [languageMenuOpen]);
+
+  useEffect(() => {
+    if (!languageMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLanguageMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [languageMenuOpen]);
+
+  useEffect(() => {
+    if (!languageMenuOpen) return;
+    setLanguageMenuOpen(false);
+  }, [currentLanguage]);
+
   return (
     <div
       className="flex h-10 items-center justify-between border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-titleBar-activeBackground)] px-2 text-xs text-[var(--vscode-titleBar-activeForeground)]"
@@ -161,10 +258,91 @@ export default function TitleBar({
         <ToolbarButton title={t("toggleTerminal")} onClick={onToggleTerminal} active={Boolean(isTerminalVisible)}>
           <IconTerminal active={Boolean(isTerminalVisible)} />
         </ToolbarButton>
-        {onToggleLanguage ? (
-          <ToolbarButton title={t("toggleLanguage")} onClick={onToggleLanguage}>
-            {languageLabel ?? t("languageToggleDefault")}
-          </ToolbarButton>
+        {canShowLanguageMenu ? (
+          <>
+            <ToolbarButton
+              title={t("toggleLanguage")}
+              onClick={() => {
+                if (!onSetLanguage) {
+                  onToggleLanguage?.();
+                  return;
+                }
+                setLanguageMenuOpen((v) => !v);
+              }}
+              buttonRef={languageButtonRef}
+            >
+              <span className="inline-flex items-center gap-1">
+                <span className="text-[var(--vscode-titleBar-activeForeground)]">
+                  <IconLanguage />
+                </span>
+                <span className="text-[11px] text-[var(--vscode-titleBar-activeForeground)]">{languageButtonText}</span>
+                <span className="text-[11px] text-[var(--vscode-descriptionForeground)]">▾</span>
+              </span>
+            </ToolbarButton>
+
+            {languageMenuOpen && languageMenuStyle
+              ? createPortal(
+                  <div
+                    className="fixed inset-0 z-[9999]"
+                    onMouseDown={(e) => {
+                      if (e.target === e.currentTarget) setLanguageMenuOpen(false);
+                    }}
+                  >
+                    <div
+                      className="fixed overflow-hidden rounded-md border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-lg"
+                      style={{ left: languageMenuStyle.left, top: languageMenuStyle.top, minWidth: languageMenuStyle.minWidth }}
+                      role="menu"
+                    >
+                      <div className="px-2 py-1 text-[11px] text-[var(--vscode-descriptionForeground)]">{t("toggleLanguage")}</div>
+                      {showLanguageSearch ? (
+                        <div className="border-t border-[var(--vscode-panel-border)] p-2">
+                          <input
+                            className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
+                            placeholder="Search language"
+                            value={languageQuery}
+                            onChange={(e) => setLanguageQuery(e.target.value)}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="max-h-[320px] overflow-auto py-1">
+                        {filteredLanguageOptions.map((opt) => {
+                          const selected = opt.value === currentLanguage;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              role="menuitem"
+                              className={[
+                                "flex w-full items-center justify-between gap-3 px-2 py-1.5 text-left text-[12px]",
+                                "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]",
+                                selected ? "bg-black/10" : ""
+                              ].join(" ")}
+                              onClick={() => {
+                                setLanguageMenuOpen(false);
+                                onSetLanguage?.(opt.value);
+                              }}
+                            >
+                              <span className="min-w-0 flex-1 truncate">
+                                <span>{opt.label}</span>
+                                {opt.label !== opt.code ? (
+                                  <span className="ml-2 text-[11px] text-[var(--vscode-descriptionForeground)]">{opt.code}</span>
+                                ) : null}
+                              </span>
+                              {selected ? (
+                                <span className="text-[11px] text-[var(--vscode-descriptionForeground)]">✓</span>
+                              ) : (
+                                <span className="w-3" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )
+              : null}
+          </>
         ) : null}
 
         {showCustomButtons ? (

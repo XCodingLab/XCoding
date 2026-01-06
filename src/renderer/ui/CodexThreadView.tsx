@@ -37,6 +37,7 @@ type Props = {
   onTurnApply?: (turnId: string) => void;
   onTurnRevert?: (turnId: string) => void;
   bottomInsetPx?: number;
+  scrollToBottomNonce?: number;
   onOpenUrl?: (url: string) => void;
   onOpenImage?: (absPathOrUrl: string) => void;
 };
@@ -127,6 +128,34 @@ function readReasoningText(item: any): string {
   const summaryText = typeof item?.summaryText === "string" ? item.summaryText : "";
   if (summaryText) return summaryText;
   return "";
+}
+
+function hasExpandableContent(type: string, item: any, approval?: ApprovalRequest) {
+  if (approval) return true;
+  const itemStatus = readItemStatus(item);
+  if (itemStatus.kind === "error") return true;
+
+  if (type === "commandExecution") return Boolean(readCommandExecutionOutput(item).trim());
+  if (type === "reasoning") return Boolean(readReasoningText(item).trim());
+  if (type === "localToolCall") {
+    return Boolean(String(item?.arguments ?? "").trim() || String(item?.input ?? "").trim() || String(item?.output ?? "").trim());
+  }
+  if (type === "mcpToolCall") {
+    const args = (item as any)?.arguments;
+    const result = (item as any)?.result;
+    const error = (item as any)?.error;
+    const hasObjectKeys = (v: any) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0;
+    return Boolean(
+      (typeof args === "string" && args.trim()) ||
+        hasObjectKeys(args) ||
+        (typeof result === "string" && result.trim()) ||
+        hasObjectKeys(result) ||
+        (typeof error === "string" && error.trim()) ||
+        hasObjectKeys(error)
+    );
+  }
+
+  return false;
 }
 
 function TerminalBlock({ title, text }: { title?: string; text: string }) {
@@ -434,6 +463,7 @@ export default function CodexThreadView({
   onTurnApply,
   onTurnRevert,
   bottomInsetPx,
+  scrollToBottomNonce,
   onOpenUrl,
   onOpenImage
 }: Props) {
@@ -447,6 +477,12 @@ export default function CodexThreadView({
   const isNearBottomRef = useRef(true);
   const lastAutoOpenIdRef = useRef<string>("");
   const [openByUser, setOpenByUser] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setOpenByUser({});
+    lastAutoOpenIdRef.current = "";
+    setVisibleTurnsCount(maxTurnsToRender);
+  }, [thread?.id]);
 
   const safeVisibleTurnsCount = Math.min(Math.max(visibleTurnsCount, maxTurnsToRender), maxTurns);
   const visibleTurns = maxTurns > safeVisibleTurnsCount ? turns.slice(maxTurns - safeVisibleTurnsCount) : turns;
@@ -520,6 +556,14 @@ export default function CodexThreadView({
     el.scrollTop = el.scrollHeight;
   }, [bottomKey]);
 
+  useEffect(() => {
+    if (typeof scrollToBottomNonce !== "number") return;
+    const el = scrollRef.current;
+    if (!el) return;
+    isNearBottomRef.current = true;
+    el.scrollTop = el.scrollHeight;
+  }, [scrollToBottomNonce]);
+
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -528,38 +572,69 @@ export default function CodexThreadView({
   };
 
   const flattenedItems = useMemo(() => {
-    const rows: Array<{ turn: TurnView; item: any; itemId: string; type: string }> = [];
+    const rows: Array<{ turn: TurnView; item: any; itemId: string; rowId: string; type: string }> = [];
     for (const turn of visibleTurns) {
       const items = Array.isArray(turn.items) ? turn.items : [];
       items.forEach((item: any, idx: number) => {
         const itemId = String(item?.id ?? `${turn.id}:${idx}`);
-        rows.push({ turn, item, itemId, type: String(item?.type ?? "unknown") });
+        rows.push({ turn, item, itemId, rowId: `${turn.id}:${itemId}`, type: String(item?.type ?? "unknown") });
       });
       if (shouldShowThinkingPlaceholder(turn)) {
-        rows.push({ turn, item: { id: `${turn.id}:thinking`, type: "turnThinking" }, itemId: `${turn.id}:thinking`, type: "turnThinking" });
+        rows.push({
+          turn,
+          item: { id: `${turn.id}:thinking`, type: "turnThinking" },
+          itemId: `${turn.id}:thinking`,
+          rowId: `${turn.id}:${turn.id}:thinking`,
+          type: "turnThinking"
+        });
       }
       const done = getTurnStatusLabel(turn.status).kind !== "running";
       if (done) {
         const summary = computeFileChangeSummary(turn);
-        if (summary) rows.push({ turn, item: { id: `${turn.id}:changesSummary`, type: "turnChangesSummary", summary }, itemId: `${turn.id}:changesSummary`, type: "turnChangesSummary" });
+        if (summary)
+          rows.push({
+            turn,
+            item: { id: `${turn.id}:changesSummary`, type: "turnChangesSummary", summary },
+            itemId: `${turn.id}:changesSummary`,
+            rowId: `${turn.id}:${turn.id}:changesSummary`,
+            type: "turnChangesSummary"
+          });
       }
     }
     return rows;
   }, [visibleTurns, bottomKey]);
 
-  const autoOpenItemId = useMemo(() => {
+  const autoOpenRowId = useMemo(() => {
     if (!flattenedItems.length) return "";
-    const last = flattenedItems[flattenedItems.length - 1];
-    if (last.type === "userMessage" || last.type === "turnThinking") return "";
-    if (isPureTextItem(last.type)) return "";
-    return last.itemId;
-  }, [flattenedItems]);
+    let activeTurnId = "";
+
+    for (let i = flattenedItems.length - 1; i >= 0; i--) {
+      const row = flattenedItems[i];
+      const turnStatus = getTurnStatusLabel(row.turn.status).kind;
+
+      if (!activeTurnId) {
+        if (turnStatus !== "running") continue;
+        activeTurnId = row.turn.id;
+        // If the last item in the running turn is pure text / placeholder, default to collapsed.
+        if (row.type === "userMessage" || row.type === "agentMessage" || row.type === "turnThinking") return "";
+      }
+
+      if (row.turn.id !== activeTurnId) continue;
+      if (row.type === "userMessage" || row.type === "agentMessage" || row.type === "turnThinking" || row.type === "turnChangesSummary") continue;
+      if (isPureTextItem(row.type)) continue;
+      const approval = approvalsByItemId[row.itemId];
+      if (!hasExpandableContent(row.type, row.item, approval)) continue;
+      return row.rowId;
+    }
+
+    return "";
+  }, [flattenedItems, approvalsByItemId]);
 
   useEffect(() => {
-    if (!autoOpenItemId) return;
-    if (lastAutoOpenIdRef.current === autoOpenItemId) return;
-    lastAutoOpenIdRef.current = autoOpenItemId;
-  }, [autoOpenItemId]);
+    if (!autoOpenRowId) return;
+    if (lastAutoOpenIdRef.current === autoOpenRowId) return;
+    lastAutoOpenIdRef.current = autoOpenRowId;
+  }, [autoOpenRowId]);
 
   const baseInset = thread ? 120 : 0;
   const requestedInset = typeof bottomInsetPx === "number" ? bottomInsetPx : 0;
@@ -593,7 +668,7 @@ export default function CodexThreadView({
         </div>
       ) : null}
 
-      {flattenedItems.map(({ turn, item, itemId, type }) => {
+      {flattenedItems.map(({ turn, item, itemId, rowId, type }) => {
         const approval = approvalsByItemId[itemId];
 
         if (type === "turnDiff") {
@@ -624,7 +699,7 @@ export default function CodexThreadView({
                   Review ↗
                 </button>
               </div>
-              <div className="mt-1 grid gap-1">
+              <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1">
                 {files.map((f) => {
                   const name = f.path.split("/").pop() ?? f.path;
                   return (
@@ -677,14 +752,33 @@ export default function CodexThreadView({
         }
 
         const title = titleForItem(item);
-        const open = Object.prototype.hasOwnProperty.call(openByUser, itemId) ? openByUser[itemId] : itemId === autoOpenItemId;
+        const open = Object.prototype.hasOwnProperty.call(openByUser, rowId) ? openByUser[rowId] : rowId === autoOpenRowId;
         const turnRunning = getTurnStatusLabel(turn.status).kind === "running";
-        const itemStatus = readItemStatus(item);
-        const showSweep = turnRunning && itemId === autoOpenItemId;
+        const showSweep = turnRunning && rowId === autoOpenRowId;
         const maxH = "var(--xcoding-codex-collapsible-max-h)";
-
+        const fileChangeMeta =
+          type === "fileChange"
+            ? (() => {
+                const changes = Array.isArray((item as any)?.changes) ? (item as any).changes : [];
+                if (!changes.length) return null;
+                const first = changes[0];
+                const fullPath = String(first?.path ?? "").trim();
+                const name = ((fullPath.split("/").pop() ?? fullPath) || "file").trim() || "file";
+                const diffText = String(first?.diff ?? "");
+                let added = 0;
+                let removed = 0;
+                for (const line of diffText.split(/\r?\n/)) {
+                  if (!line) continue;
+                  if (line.startsWith("+++ ") || line.startsWith("--- ")) continue;
+                  if (line.startsWith("*** ")) continue;
+                  if (line.startsWith("+")) added += 1;
+                  else if (line.startsWith("-")) removed += 1;
+                }
+                return { name, added, removed };
+              })()
+            : null;
         return (
-          <div key={itemId} className="mb-1">
+          <div key={rowId} className="mb-1">
             <div className="px-2 py-0">
               <button
                 type="button"
@@ -702,23 +796,36 @@ export default function CodexThreadView({
                     return;
                   }
                   if (type === "turnThinking") return;
-                  setOpenByUser((prev) => ({ ...prev, [itemId]: !open }));
+                  setOpenByUser((prev) => ({ ...prev, [rowId]: !open }));
                 }}
                 title={title}
               >
-                <span className="min-w-0 max-w-full truncate">
+                <span className="min-w-0 flex-1 truncate">
                   <span
                     className={[
                       "text-[color-mix(in_srgb,var(--vscode-foreground)_62%,var(--vscode-descriptionForeground))] group-hover:text-[var(--vscode-foreground)]",
                       open ? "text-[var(--vscode-foreground)]" : ""
                     ].join(" ")}
                   >
-                    {title || "(untitled)"}
-                  </span>
-                  <span className="ml-1 inline-flex items-center">
-                    <span className="opacity-0 group-hover:opacity-100 text-[var(--vscode-descriptionForeground)] group-hover:text-[var(--vscode-foreground)]">▾</span>
+                    {fileChangeMeta ? `Edited · ${fileChangeMeta.name}` : title || "(untitled)"}
                   </span>
                 </span>
+                {fileChangeMeta ? (
+                  <span className="shrink-0 tabular-nums text-[11px]">
+                    {fileChangeMeta.added ? <span className="text-[color-mix(in_srgb,#89d185_90%,white)]">{`+${fileChangeMeta.added}`}</span> : null}
+                    {fileChangeMeta.removed ? (
+                      <span
+                        className={[
+                          "text-[color-mix(in_srgb,#f14c4c_90%,white)]",
+                          fileChangeMeta.added ? "ml-2" : ""
+                        ].join(" ")}
+                      >
+                        {`-${fileChangeMeta.removed}`}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
+                <span className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 text-[var(--vscode-descriptionForeground)] group-hover:text-[var(--vscode-foreground)]">▾</span>
               </button>
             </div>
 

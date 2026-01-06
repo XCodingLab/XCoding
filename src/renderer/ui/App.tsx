@@ -1482,8 +1482,8 @@ export default function App() {
           viewMode={activeViewMode ?? undefined}
           onViewModeChange={activeProjectId && activeViewMode ? ((mode) => void setProjectViewMode(mode)) : undefined}
           showExplorerToggle={!isWorkflowPreview}
-          languageLabel={language === "en-US" ? t("languageChinese") : t("languageEnglish")}
-          onToggleLanguage={() => void setLanguageAndPersist(language === "en-US" ? "zh-CN" : "en-US")}
+          language={language}
+          onSetLanguage={(next) => void setLanguageAndPersist(next)}
         />
 
         <div className="flex h-[calc(100%-2.5rem)] min-h-0 w-full">

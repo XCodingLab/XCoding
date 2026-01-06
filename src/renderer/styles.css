@@ -134,7 +134,7 @@
   --color-token-success: #89d185;
 
   /* Codex transcript behavior */
-  --xcoding-codex-collapsible-max-h: 35vh; /* max height for tool/thinking details (aligned with Status modal) */
+  --xcoding-codex-collapsible-max-h: 30vh; /* max height for tool/thinking details */
 }
 
 /* Minimal utility classes to mirror Codex webview token naming */
