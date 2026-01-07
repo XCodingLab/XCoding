@@ -26,7 +26,7 @@ export default function CodexTopBar({
   onStartNewThread
 }: Props) {
   return (
-    <div className="flex h-10 items-center justify-between gap-2 border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-2">
+    <div className="flex h-10 items-center justify-between gap-2 border-b border-glass-border bg-glass-bg px-2 backdrop-blur-md">
       <div className="flex min-w-0 items-center gap-1">
         <div className="min-w-0 truncate text-[12px] font-semibold text-[var(--vscode-foreground)]">{title}</div>
       </div>
@@ -72,4 +72,3 @@ export default function CodexTopBar({
     </div>
   );
 }
-

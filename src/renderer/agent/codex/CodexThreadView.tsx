@@ -189,11 +189,11 @@ function hasExpandableContent(type: string, item: any, approval?: ApprovalReques
     const hasObjectKeys = (v: any) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0;
     return Boolean(
       (typeof args === "string" && args.trim()) ||
-        hasObjectKeys(args) ||
-        (typeof result === "string" && result.trim()) ||
-        hasObjectKeys(result) ||
-        (typeof error === "string" && error.trim()) ||
-        hasObjectKeys(error)
+      hasObjectKeys(args) ||
+      (typeof result === "string" && result.trim()) ||
+      hasObjectKeys(result) ||
+      (typeof error === "string" && error.trim()) ||
+      hasObjectKeys(error)
     );
   }
 
@@ -722,14 +722,14 @@ export default function CodexThreadView({
       style={{ paddingBottom: `calc(${bottomInset}px + env(safe-area-inset-bottom, 0px))` }}
     >
       {!thread ? (
-        <div className="flex h-full min-h-0 items-center justify-center p-6 text-sm text-token-description-foreground">{t("codexSelectOrStartConversation")}</div>
+        <div className="flex h-full min-h-0 items-center justify-center p-6 text-sm text-[var(--vscode-descriptionForeground)]">{t("codexSelectOrStartConversation")}</div>
       ) : null}
 
       {/* Intentionally no empty-state placeholder. */}
 
       {maxTurns > safeVisibleTurnsCount ? (
         <div className="mb-3 flex items-center justify-between rounded border border-token-border bg-token-input-background px-3 py-2 text-[12px]">
-          <div className="text-token-description-foreground">
+          <div className="text-[var(--vscode-descriptionForeground)]">
             {t("codexShowingLastTurns")} {safeVisibleTurnsCount} {t("codexOf")} {maxTurns} {t("codexTurns")}
           </div>
           <button
@@ -809,7 +809,7 @@ export default function CodexThreadView({
           return (
             <div key={itemId} className="mb-2 flex justify-end">
               <div className="max-w-[70%] rounded-2xl bg-black/10 px-3 py-2 text-[13px] leading-5 text-[var(--vscode-foreground)]">
-                    <UserBlocks content={content} onOpenUrl={onOpenUrl} onOpenImage={onOpenImage} />
+                <UserBlocks content={content} onOpenUrl={onOpenUrl} onOpenImage={onOpenImage} />
               </div>
             </div>
           );
@@ -868,23 +868,23 @@ export default function CodexThreadView({
         const fileChangeMeta =
           type === "fileChange"
             ? (() => {
-                const changes = Array.isArray((item as any)?.changes) ? (item as any).changes : [];
-                if (!changes.length) return null;
-                const first = changes[0];
-                const fullPath = String(first?.path ?? "").trim();
-                const name = ((fullPath.split("/").pop() ?? fullPath) || "file").trim() || "file";
-                const diffText = String(first?.diff ?? "");
-                let added = 0;
-                let removed = 0;
-                for (const line of diffText.split(/\r?\n/)) {
-                  if (!line) continue;
-                  if (line.startsWith("+++ ") || line.startsWith("--- ")) continue;
-                  if (line.startsWith("*** ")) continue;
-                  if (line.startsWith("+")) added += 1;
-                  else if (line.startsWith("-")) removed += 1;
-                }
-                return { name, added, removed };
-              })()
+              const changes = Array.isArray((item as any)?.changes) ? (item as any).changes : [];
+              if (!changes.length) return null;
+              const first = changes[0];
+              const fullPath = String(first?.path ?? "").trim();
+              const name = ((fullPath.split("/").pop() ?? fullPath) || "file").trim() || "file";
+              const diffText = String(first?.diff ?? "");
+              let added = 0;
+              let removed = 0;
+              for (const line of diffText.split(/\r?\n/)) {
+                if (!line) continue;
+                if (line.startsWith("+++ ") || line.startsWith("--- ")) continue;
+                if (line.startsWith("*** ")) continue;
+                if (line.startsWith("+")) added += 1;
+                else if (line.startsWith("-")) removed += 1;
+              }
+              return { name, added, removed };
+            })()
             : null;
         return (
           <div key={rowId} className="mb-1">

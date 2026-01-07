@@ -49,9 +49,14 @@ export default function CodexHistoryOverlay({
 
   return (
     <>
-      <button type="button" aria-label={t("closeHistory")} className="absolute inset-0 z-40 bg-black/40" onClick={onClose} />
-      <div className="absolute left-3 right-3 top-3 z-50 flex h-[35%] min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-sideBar-background)] shadow-2xl">
-        <div className="border-b border-[var(--vscode-panel-border)] p-2">
+      <button
+        type="button"
+        aria-label={t("closeHistory")}
+        className="absolute inset-0 z-40 bg-transparent backdrop-blur-sm cursor-default"
+        onClick={onClose}
+      />
+      <div className="absolute left-3 right-3 top-3 z-50 flex h-[35%] min-h-0 flex-col overflow-hidden rounded-xl border border-glass-border bg-glass-bg-heavy shadow-2xl backdrop-blur-xl">
+        <div className="border-b border-glass-border p-2">
           <div className="flex items-center gap-2">
             <input
               className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
@@ -124,7 +129,9 @@ export default function CodexHistoryOverlay({
                   <div
                     className={[
                       "flex items-center justify-between gap-2 text-[10px]",
-                      isActive ? "text-white/70" : "text-[var(--vscode-descriptionForeground)]"
+                      isActive
+                        ? "text-[var(--vscode-list-activeSelectionForeground)]"
+                        : "text-[var(--vscode-descriptionForeground)]"
                     ].join(" ")}
                   >
                     <div className="min-w-0 truncate" title={thread.cwd || ""}>

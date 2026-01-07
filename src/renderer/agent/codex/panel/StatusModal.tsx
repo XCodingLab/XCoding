@@ -80,7 +80,7 @@ export default function StatusModal({ open, threadId, tokenUsage, rateLimits, on
 
   return (
     <div
-      className="absolute bottom-full left-2 right-2 z-50 mb-2 flex max-h-[35vh] min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-sideBar-background)] shadow-2xl"
+      className="absolute bottom-full left-2 right-2 z-50 mb-2 flex max-h-[35vh] min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-2xl"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between gap-2 border-b border-[var(--vscode-panel-border)] px-3 py-2">

@@ -379,56 +379,56 @@ export default function Composer({
 
         {open && menuStyle
           ? createPortal(
+            <div
+              className="fixed inset-0 z-[9999]"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) setOpenPicker(null);
+              }}
+            >
               <div
-                className="fixed inset-0 z-[9999]"
-                onMouseDown={(e) => {
-                  if (e.target === e.currentTarget) setOpenPicker(null);
-                }}
+                ref={menuRef}
+                className="fixed overflow-auto rounded-md border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-lg"
+                style={{ left: menuStyle.left, top: menuStyle.top, minWidth: menuStyle.minWidth, maxHeight: maxMenuHeight }}
+                role="menu"
               >
-                <div
-                  ref={menuRef}
-                  className="fixed overflow-auto rounded-md border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-lg"
-                  style={{ left: menuStyle.left, top: menuStyle.top, minWidth: menuStyle.minWidth, maxHeight: maxMenuHeight }}
-                  role="menu"
-                >
-                  <div className="px-2 py-1 text-[11px] text-[var(--vscode-descriptionForeground)]">
-                    {id === "mode"
-                      ? t("switchMode")
-                      : id === "model"
-                        ? t("chooseModelAndReasoning")
-                        : id === "effort"
-                          ? t("selectReasoningEffort")
-                          : `${t("switchTo")} ${id}`}
-                  </div>
-                  {options.map((opt) => {
-                    const selected = opt.value === value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        role="menuitem"
-                        className={[
-                          "flex w-full items-center gap-2 px-2 py-1.5 text-left text-[12px]",
-                          "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]",
-                          selected ? "bg-black/10" : ""
-                        ].join(" ")}
-                        onClick={() => {
-                          setOpenPicker(null);
-                          onChange(opt.value);
-                        }}
-                      >
-                        <span className="inline-flex h-4 w-4 items-center justify-center text-[var(--vscode-descriptionForeground)]">
-                          {opt.icon ?? null}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate">{opt.label}</span>
-                        {selected ? <Check className="h-4 w-4 text-[var(--vscode-foreground)]" /> : <span className="h-4 w-4" />}
-                      </button>
-                    );
-                  })}
+                <div className="px-2 py-1 text-[11px] text-[var(--vscode-descriptionForeground)]">
+                  {id === "mode"
+                    ? t("switchMode")
+                    : id === "model"
+                      ? t("chooseModelAndReasoning")
+                      : id === "effort"
+                        ? t("selectReasoningEffort")
+                        : `${t("switchTo")} ${id}`}
                 </div>
-              </div>,
-              document.body
-            )
+                {options.map((opt) => {
+                  const selected = opt.value === value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="menuitem"
+                      className={[
+                        "flex w-full items-center gap-2 px-2 py-1.5 text-left text-[12px]",
+                        "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]",
+                        selected ? "bg-black/10" : ""
+                      ].join(" ")}
+                      onClick={() => {
+                        setOpenPicker(null);
+                        onChange(opt.value);
+                      }}
+                    >
+                      <span className="inline-flex h-4 w-4 items-center justify-center text-[var(--vscode-descriptionForeground)]">
+                        {opt.icon ?? null}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                      {selected ? <Check className="h-4 w-4 text-[var(--vscode-foreground)]" /> : <span className="h-4 w-4" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>,
+            document.body
+          )
           : null}
       </div>
     );
@@ -769,7 +769,7 @@ export default function Composer({
         </div>
 
         {isPlusMenuOpen ? (
-          <div className="absolute bottom-full left-2 z-50 mb-2 w-[260px] overflow-hidden rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-lg">
+          <div className="absolute bottom-full left-2 z-50 mb-2 w-[260px] overflow-hidden rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-lg">
             <button
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
               type="button"
@@ -796,7 +796,7 @@ export default function Composer({
         ) : null}
 
         {isSlashMenuOpen ? (
-          <div className="absolute bottom-full left-2 z-50 mb-2 w-[360px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-2xl">
+          <div className="absolute bottom-full left-2 z-50 mb-2 w-[360px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-2xl">
             <div className="border-b border-[var(--vscode-panel-border)] p-2">
               <input
                 className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
@@ -853,111 +853,111 @@ export default function Composer({
             </div>
           </div>
         ) : null}
-	      </div>
+      </div>
 
-	      <div ref={footerRef} className="mt-2 flex items-center justify-between gap-2 px-1">
-	        <div ref={controlsRef} className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-	          <DropdownSelect
-	            id="mode"
-	            value={mode}
-	            label={modeLabel}
-	            disabled={!projectRootPath || isBusy}
-	            compact={compactPickers}
-	            onChange={(v) => onSelectMode(v as CodexMode)}
-	            options={[
-	              { value: "read-only", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
-	              { value: "auto", label: "Agent", icon: <Bot className="h-4 w-4" /> },
-	              { value: "full-access", label: "Agent (full access)", icon: <ShieldAlert className="h-4 w-4" /> }
-	            ]}
-	            className="shrink-0"
-	          />
+      <div ref={footerRef} className="mt-2 flex items-center justify-between gap-2 px-1">
+        <div ref={controlsRef} className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          <DropdownSelect
+            id="mode"
+            value={mode}
+            label={modeLabel}
+            disabled={!projectRootPath || isBusy}
+            compact={compactPickers}
+            onChange={(v) => onSelectMode(v as CodexMode)}
+            options={[
+              { value: "read-only", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
+              { value: "auto", label: "Agent", icon: <Bot className="h-4 w-4" /> },
+              { value: "full-access", label: "Agent (full access)", icon: <ShieldAlert className="h-4 w-4" /> }
+            ]}
+            className="shrink-0"
+          />
 
-	          <DropdownSelect
-	            id="model"
-	            value={model}
-	            label={modelLabel}
-	            disabled={!projectRootPath || isBusy}
-	            compact={compactPickers}
-	            fallbackIcon={<Cpu className="h-4 w-4" />}
-	            onChange={(v) => onSelectModel(v)}
-	            options={
-	              availableModels?.length
-	                ? availableModels.map((m) => ({
-	                    value: m.model || m.id,
-	                    label: m.displayName || m.model || m.id
-	                  }))
-	                : [
-	                    { value: "gpt-5.2", label: "GPT-5.2" },
-	                    { value: "gpt-5.1", label: "GPT-5.1" },
-	                    { value: "gpt-4o", label: "GPT-4o" },
-	                    { value: "gpt-4o-mini", label: "GPT-4o mini" }
-	                  ]
-	            }
-	            className="shrink-0"
-	            maxMenuHeight={360}
-	          />
+          <DropdownSelect
+            id="model"
+            value={model}
+            label={modelLabel}
+            disabled={!projectRootPath || isBusy}
+            compact={compactPickers}
+            fallbackIcon={<Cpu className="h-4 w-4" />}
+            onChange={(v) => onSelectModel(v)}
+            options={
+              availableModels?.length
+                ? availableModels.map((m) => ({
+                  value: m.model || m.id,
+                  label: m.displayName || m.model || m.id
+                }))
+                : [
+                  { value: "gpt-5.2", label: "GPT-5.2" },
+                  { value: "gpt-5.1", label: "GPT-5.1" },
+                  { value: "gpt-4o", label: "GPT-4o" },
+                  { value: "gpt-4o-mini", label: "GPT-4o mini" }
+                ]
+            }
+            className="shrink-0"
+            maxMenuHeight={360}
+          />
 
-	          <DropdownSelect
-	            id="effort"
-	            value={effort}
-	            label={effortLabel}
-	            disabled={!projectRootPath || isBusy}
-	            compact={compactPickers}
-	            fallbackIcon={<Brain className="h-4 w-4" />}
-	            onChange={(v) => onSelectEffort(v as ReasoningEffort)}
-	            options={supportedEfforts.map((o) => ({
-	              value: o.reasoningEffort,
-	              label:
-	                o.reasoningEffort === "none"
-	                  ? "None"
-	                  : o.reasoningEffort === "xhigh"
-	                    ? "XHigh"
-	                    : o.reasoningEffort.charAt(0).toUpperCase() + o.reasoningEffort.slice(1)
-	            }))}
-	            className="shrink-0"
-	          />
-	        </div>
+          <DropdownSelect
+            id="effort"
+            value={effort}
+            label={effortLabel}
+            disabled={!projectRootPath || isBusy}
+            compact={compactPickers}
+            fallbackIcon={<Brain className="h-4 w-4" />}
+            onChange={(v) => onSelectEffort(v as ReasoningEffort)}
+            options={supportedEfforts.map((o) => ({
+              value: o.reasoningEffort,
+              label:
+                o.reasoningEffort === "none"
+                  ? "None"
+                  : o.reasoningEffort === "xhigh"
+                    ? "XHigh"
+                    : o.reasoningEffort.charAt(0).toUpperCase() + o.reasoningEffort.slice(1)
+            }))}
+            className="shrink-0"
+          />
+        </div>
 
-	        {typeof usedTokens === "number" && typeof contextWindow === "number" && typeof usedPercent === "number" ? (
-	          <div className="group relative shrink-0 flex items-center gap-1 text-[11px] text-[var(--vscode-foreground)]">
-	            <div
-	              className={[
-	                "pointer-events-none absolute right-0 top-0 -translate-y-full",
-	                "hidden group-hover:block",
-	                "mb-2 w-[220px] rounded-md border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-lg"
-	              ].join(" ")}
-	            >
-	              <div className="p-2 text-[11px] leading-4 text-[var(--vscode-foreground)]">
-	                <div className="text-[var(--vscode-descriptionForeground)]">Context window:</div>
-	                <div className="mt-0.5">{formatTokensShort(contextWindow, numberFormat)} tokens</div>
-	                <div className="text-[var(--vscode-descriptionForeground)]">
-	                  {formatTokensShort(usedTokens, numberFormat)} / {formatTokensShort(contextWindow, numberFormat)} tokens used
-	                </div>
-	                <div className="mt-1 flex items-center justify-end gap-1 text-[var(--vscode-descriptionForeground)]">
-	                  <span className="font-semibold">{usedPercent}%</span>
-	                </div>
-	              </div>
-	            </div>
+        {typeof usedTokens === "number" && typeof contextWindow === "number" && typeof usedPercent === "number" ? (
+          <div className="group relative shrink-0 flex items-center gap-1 text-[11px] text-[var(--vscode-foreground)]">
+            <div
+              className={[
+                "pointer-events-none absolute right-0 top-0 -translate-y-full",
+                "hidden group-hover:block",
+                "mb-2 w-[220px] rounded-md border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-lg"
+              ].join(" ")}
+            >
+              <div className="p-2 text-[11px] leading-4 text-[var(--vscode-foreground)]">
+                <div className="text-[var(--vscode-descriptionForeground)]">Context window:</div>
+                <div className="mt-0.5">{formatTokensShort(contextWindow, numberFormat)} tokens</div>
+                <div className="text-[var(--vscode-descriptionForeground)]">
+                  {formatTokensShort(usedTokens, numberFormat)} / {formatTokensShort(contextWindow, numberFormat)} tokens used
+                </div>
+                <div className="mt-1 flex items-center justify-end gap-1 text-[var(--vscode-descriptionForeground)]">
+                  <span className="font-semibold">{usedPercent}%</span>
+                </div>
+              </div>
+            </div>
 
-	            <svg className="h-5 w-5" viewBox="0 0 36 36" aria-hidden="true">
-	              <circle cx="18" cy="18" r="15.5" fill="none" stroke="color-mix(in srgb, white 22%, transparent)" strokeWidth="3" />
-	              <circle
-	                cx="18"
-	                cy="18"
-	                r="15.5"
-	                fill="none"
-	                stroke="white"
-	                strokeWidth="3"
-	                strokeLinecap="round"
-	                strokeDasharray={`${Math.round((usedPercent / 100) * 97.4)} 97.4`}
-	                transform="rotate(-90 18 18)"
-	                opacity={0.9}
-	              />
-	            </svg>
-	            <div className="font-semibold">{usedPercent}%</div>
-	          </div>
-	        ) : null}
-	      </div>
-	    </div>
-	  );
+            <svg className="h-5 w-5" viewBox="0 0 36 36" aria-hidden="true">
+              <circle cx="18" cy="18" r="15.5" fill="none" stroke="color-mix(in srgb, white 22%, transparent)" strokeWidth="3" />
+              <circle
+                cx="18"
+                cy="18"
+                r="15.5"
+                fill="none"
+                stroke="white"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={`${Math.round((usedPercent / 100) * 97.4)} 97.4`}
+                transform="rotate(-90 18 18)"
+                opacity={0.9}
+              />
+            </svg>
+            <div className="font-semibold">{usedPercent}%</div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
