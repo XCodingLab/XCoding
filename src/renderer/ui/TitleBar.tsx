@@ -263,31 +263,32 @@ export default function TitleBar({
                   onClick={() => props.onSelectProjectSlot?.(item.slot)}
                   title={item.project?.path ?? ""}
                   className={[
-                    "group relative flex h-[44px] min-w-[120px] max-w-[200px] flex-col justify-center gap-1 rounded-t-lg border-x border-t px-3 py-1 text-xs transition-colors",
+                    "group relative flex h-[40px] min-w-[120px] max-w-[220px] items-center gap-2 rounded-t-lg border-x border-t px-3 text-xs transition-colors",
                     isActive
                       ? "z-10 bg-[var(--vscode-editor-background)] text-[var(--vscode-tab-activeForeground)] border-[var(--vscode-tab-border)]"
                       : "bg-[var(--vscode-tab-inactiveBackground)] text-[var(--vscode-tab-inactiveForeground)] border-transparent hover:bg-[var(--vscode-tab-hoverBackground)]"
                   ].join(" ")}
                   style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
                 >
-                  <div className="flex w-full min-w-0 items-center gap-2">
-                    <Folder
-                      className={[
-                        "h-3.5 w-3.5 shrink-0",
-                        isActive ? "text-[var(--vscode-foreground)]" : "text-[var(--vscode-descriptionForeground)]"
-                      ].join(" ")}
-                    />
-                    <span className="truncate">{name}</span>
-                  </div>
-                  <div
+                  <Folder
                     className={[
-                      "flex w-full items-center gap-1 rounded px-2 py-0.5 text-[10px]",
-                      status === "running" ? "bg-emerald-500/15 text-emerald-200" : "bg-white/5 text-[var(--vscode-descriptionForeground)]"
+                      "h-3.5 w-3.5 shrink-0",
+                      isActive ? "text-[var(--vscode-foreground)]" : "text-[var(--vscode-descriptionForeground)]"
                     ].join(" ")}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{name}</span>
+                  <span
+                    className={[
+                      "flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px]",
+                      status === "running"
+                        ? "bg-emerald-500/15 text-emerald-200"
+                        : "bg-white/5 text-[var(--vscode-descriptionForeground)]"
+                    ].join(" ")}
+                    title={statusLabel}
                   >
-                    <span className={["h-1.5 w-1.5 rounded-full", status === "running" ? "bg-emerald-400" : "bg-white/30"].join(" ")} />
-                    <span className="truncate">{statusLabel}</span>
-                  </div>
+                    <span className={["h-2 w-2 rounded-full", status === "running" ? "bg-emerald-400" : "bg-white/30"].join(" ")} />
+                    <span>{statusLabel}</span>
+                  </span>
                 </button>
               );
             })}
