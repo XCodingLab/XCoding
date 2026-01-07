@@ -25,9 +25,55 @@ declare global {
         hide: (payload: { previewId: string }) => Promise<{ ok: boolean; reason?: string }>;
         setBounds: (payload: { previewId: string; bounds: { x: number; y: number; width: number; height: number } }) => Promise<{ ok: boolean; reason?: string }>;
         navigate: (payload: { previewId: string; url: string }) => Promise<{ ok: boolean; reason?: string }>;
+        reload: (payload: { previewId: string }) => Promise<{ ok: boolean; reason?: string }>;
         destroy: (payload: { previewId: string }) => Promise<{ ok: boolean; reason?: string }>;
+        setPreserveLog: (payload: { previewId: string; preserveLog: boolean }) => Promise<{ ok: boolean; reason?: string }>;
+        setEmulation: (payload: { previewId: string; mode: "desktop" | "phone" | "tablet" }) => Promise<{ ok: boolean; reason?: string }>;
+        networkGetEntry: (payload: { previewId: string; requestId: string }) => Promise<
+          | {
+              ok: true;
+              entry: {
+                requestId: string;
+                url: string;
+                method: string;
+                type: string;
+                status: number;
+                statusText: string;
+                mimeType: string;
+                startedAt: number;
+                finishedAt: number;
+                durationMs: number;
+                sizeBytes: number;
+                errorText: string;
+                requestHeaders: Record<string, string>;
+                requestPostData: string;
+                responseHeaders: Record<string, string>;
+              };
+            }
+          | { ok: false; reason: string }
+        >;
+        networkGetResponseBody: (payload: { previewId: string; requestId: string }) => Promise<
+          | { ok: true; body: string; base64Encoded: boolean; sizeBytes: number; mimeType: string }
+          | { ok: false; reason: string; sizeBytes?: number }
+        >;
+        networkBuildCurl: (payload: { previewId: string; requestId: string }) => Promise<{ ok: true; curl: string } | { ok: false; reason: string }>;
+        networkClearBrowserCache: (payload: { previewId: string }) => Promise<{ ok: boolean; reason?: string }>;
         onConsole: (listener: (payload: { previewId: string; level: string; text: string; timestamp: number }) => void) => () => void;
-        onNetwork: (listener: (payload: { previewId: string; requestId: string; url: string; status: number; method: string; timestamp: number }) => void) => () => void;
+        onNetwork: (
+          listener: (payload: {
+            previewId: string;
+            requestId: string;
+            url: string;
+            status: number;
+            method: string;
+            type: string;
+            timestamp: number;
+            durationMs: number | null;
+            sizeBytes: number | null;
+            errorText: string | null;
+          }) => void
+        ) => () => void;
+        onResetLogs: (listener: (payload: { previewId: string }) => void) => () => void;
       };
       projects: {
         get: () => Promise<{
@@ -299,6 +345,7 @@ declare global {
       };
       os: {
         copyText: (text: string) => Promise<{ ok: boolean; reason?: string }>;
+        openExternal: (url: string) => Promise<{ ok: boolean; reason?: string }>;
       };
     };
   }

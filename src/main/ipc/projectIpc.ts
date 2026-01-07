@@ -1,4 +1,4 @@
-import { clipboard, ipcMain } from "electron";
+import { clipboard, ipcMain, shell } from "electron";
 import type { ProjectServiceRequestNoId } from "../shared/projectServiceProtocol";
 import { sendToProjectService } from "../managers/projectServiceManager";
 import { getProjectForSlot } from "../stores/projectsStore";
@@ -300,6 +300,24 @@ export function registerProjectIpc() {
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: e instanceof Error ? e.message : "copy_failed" };
+    }
+  });
+
+  ipcMain.handle("os:openExternal", async (_event, { url }: { url: string }) => {
+    try {
+      const target = String(url ?? "").trim();
+      if (!target) return { ok: false, reason: "missing_url" };
+      let parsed: URL;
+      try {
+        parsed = new URL(target);
+      } catch {
+        return { ok: false, reason: "invalid_url" };
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, reason: "unsupported_protocol" };
+      await shell.openExternal(parsed.toString());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : "open_external_failed" };
     }
   });
 }

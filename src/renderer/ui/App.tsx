@@ -474,7 +474,7 @@ export default function App() {
           return { ...s, panes: { ...s.panes, [pane]: { ...s.panes[pane], activeTabId: existingSameId.id } } };
         }
 
-        const next: AnyTab = { id: WORKFLOW_PREVIEW_TAB_ID, type: "preview", title: "Preview", url: "about:blank" };
+        const next: AnyTab = { id: WORKFLOW_PREVIEW_TAB_ID, type: "preview", title: "Preview", url: "about:blank", draftUrl: "about:blank" };
         return {
           ...s,
           activePane: pane,
@@ -484,46 +484,19 @@ export default function App() {
       return;
     }
 
-    // In develop/other stages, previews should not be visible at all.
-    // Best-effort cleanup: destroy any existing BrowserViews for preview tabs.
-    const currentUi = slotUiRef.current[slot];
-    if (currentUi) {
-      const previewIds = new Set<string>();
-      (["A", "B", "C"] as const).forEach((pane) => {
-        currentUi.panes[pane].tabs.forEach((tab) => {
-          if (tab.type === "preview") previewIds.add(tab.id);
-        });
-      });
-      previewIds.forEach((previewId) => void window.xcoding.preview.destroy({ previewId }));
-    }
-
     const saved = lastNonPreviewSelectionBySlotRef.current[slot];
     updateSlot(slot, (s) => {
       const panes: PaneId[] = ["A", "B", "C"];
       const findTab = (tabId: string) =>
         panes.find((pane) => s.panes[pane].tabs.some((t) => t.id === tabId)) ?? null;
 
-      // In develop/other stages, do not show any preview tabs at all.
-      let nextState: SlotUiState = s;
-      for (const pane of panes) {
-        const hasPreview = nextState.panes[pane].tabs.some((t) => t.type === "preview");
-        if (!hasPreview) continue;
-        const nextTabs = nextState.panes[pane].tabs.filter((t) => t.type !== "preview");
-        const nextActive =
-          nextTabs.some((t) => t.id === nextState.panes[pane].activeTabId) ? nextState.panes[pane].activeTabId : (nextTabs[0]?.id ?? "");
-        nextState = {
-          ...nextState,
-          panes: { ...nextState.panes, [pane]: { tabs: nextTabs, activeTabId: nextActive } }
-        };
-      }
-
       if (saved) {
         const pane = findTab(saved.tabId);
         if (pane) {
           return {
-            ...nextState,
+            ...s,
             activePane: pane,
-            panes: { ...nextState.panes, [pane]: { ...nextState.panes[pane], activeTabId: saved.tabId } }
+            panes: { ...s.panes, [pane]: { ...s.panes[pane], activeTabId: saved.tabId } }
           };
         }
         lastNonPreviewSelectionBySlotRef.current[slot] = null;
@@ -533,17 +506,17 @@ export default function App() {
         panes
           .map((pane) => ({
             pane,
-            tab: nextState.panes[pane].tabs.find((t) => t.type !== "preview") ?? null
+            tab: s.panes[pane].tabs.find((t) => t.type !== "preview") ?? null
           }))
           .find((x) => x.tab)?.tab ?? null;
-      if (!firstNonPreview) return nextState;
+      if (!firstNonPreview) return s;
 
       const pane = findTab(firstNonPreview.id);
-      if (!pane) return nextState;
+      if (!pane) return s;
       return {
-        ...nextState,
+        ...s,
         activePane: pane,
-        panes: { ...nextState.panes, [pane]: { ...nextState.panes[pane], activeTabId: firstNonPreview.id } }
+        panes: { ...s.panes, [pane]: { ...s.panes[pane], activeTabId: firstNonPreview.id } }
       };
     });
   }
@@ -646,10 +619,22 @@ export default function App() {
     }
   }
 
+  function disposeSlotPreviews(state: SlotUiState) {
+    (["A", "B", "C"] as const).forEach((pane) => {
+      state.panes[pane].tabs.forEach((tab) => {
+        if (tab.type !== "preview") return;
+        void window.xcoding.preview.destroy({ previewId: tab.id });
+      });
+    });
+  }
+
   function resetSlotUi(slot: number) {
     setSlotUi((prev) => {
       const existing = prev[slot];
-      if (existing) disposeSlotTerminals(existing);
+      if (existing) {
+        disposeSlotTerminals(existing);
+        disposeSlotPreviews(existing);
+      }
       return { ...prev, [slot]: makeEmptySlotUiState() };
     });
   }
@@ -670,11 +655,10 @@ export default function App() {
   const activePaneState = activeUi.panes[activeUi.activePane];
   const activePaneTab = activePaneState.tabs.find((t) => t.id === activePaneState.activeTabId) ?? activePaneState.tabs[0] ?? null;
   const activePreviewTab = activePaneTab && activePaneTab.type === "preview" ? activePaneTab : null;
-  const isPreviewFocus = Boolean(activePreviewTab && activeUi.previewUi?.mode === "preview");
   const effectiveLayout = {
     ...layout,
-    isExplorerVisible: isWorkflowPreview || isPreviewFocus ? false : layout.isExplorerVisible,
-    isChatVisible: isPreviewFocus ? false : layout.isChatVisible
+    isExplorerVisible: isWorkflowPreview ? false : layout.isExplorerVisible,
+    isChatVisible: layout.isChatVisible
   };
 
   function moveTabBetweenPanes(panes: SlotUiState["panes"], fromPane: PaneId, toPane: PaneId, tabId: string) {
@@ -712,39 +696,7 @@ export default function App() {
     if (existing && existing.slot !== activeProjectSlot) {
       exitPreviewFocus(existing, { restoreSelection: true });
     }
-
-    const current = previewFocusRef.current;
-    if (activePreviewTab) {
-      if (current && current.slot === activeProjectSlot) return;
-      const previewPane = activeUi.activePane;
-      previewFocusRef.current = {
-        slot: activeProjectSlot,
-        previewTabId: activePreviewTab.id,
-        prevLayoutMode: activeUi.layoutMode,
-        prevLayoutSplit: activeUi.layoutSplit,
-        prevActivePane: activeUi.activePane,
-        previewSourcePane: previewPane === "A" ? null : previewPane
-      };
-
-      updateSlot(activeProjectSlot, (s) => {
-        const activeId = activePreviewTab.id;
-        const fromPane =
-          (["A", "B", "C"] as const).find((p) => s.panes[p].tabs.some((t) => t.id === activeId)) ?? (previewPane as PaneId);
-        const moved = fromPane === "A" ? { ...s.panes, A: { ...s.panes.A, activeTabId: activeId } } : moveTabBetweenPanes(s.panes, fromPane, "A", activeId);
-        return {
-          ...s,
-          layoutMode: "1x1",
-          activePane: "A",
-          panes: moved
-        };
-      });
-      return;
-    }
-
-    if (current && current.slot === activeProjectSlot) {
-      exitPreviewFocus(current, { restoreSelection: false });
-    }
-  }, [activeProjectSlot, activePreviewTab?.id, activeUi.previewUi?.mode]);
+  }, [activeProjectSlot]);
 
   function persistLayout(next: typeof layout) {
     if (layoutPersistTimerRef.current != null) window.clearTimeout(layoutPersistTimerRef.current);
@@ -1081,7 +1033,7 @@ export default function App() {
   function openNewPreview(url: string = "about:blank", title: string = "Preview") {
     if (activeProjectId) ensureProjectStage("preview");
     const id = `tab-preview-${Date.now()}`;
-    const next: AnyTab = { id, type: "preview", title: title || "Preview", url };
+    const next: AnyTab = { id, type: "preview", title: title || "Preview", url, draftUrl: url };
     updateSlot(activeProjectSlot, (s) => ({
       ...s,
       panes: { ...s.panes, [s.activePane]: { tabs: [...s.panes[s.activePane].tabs, next], activeTabId: id } }
@@ -1102,7 +1054,7 @@ export default function App() {
 
   function openAuxPreview(url: string, title: string) {
     const id = `tab-preview-${Date.now()}`;
-    const next: AnyTab = { id, type: "preview", title: title || "Preview", url };
+    const next: AnyTab = { id, type: "preview", title: title || "Preview", url, draftUrl: url };
     updateSlot(activeProjectSlot, (s) => ({
       ...s,
       panes: { ...s.panes, [s.activePane]: { tabs: [...s.panes[s.activePane].tabs, next], activeTabId: id } }
@@ -1187,6 +1139,11 @@ export default function App() {
   }
 
   function closeTab(pane: PaneId, tabId: string) {
+    const currentUi = slotUiRef.current[activeProjectSlot];
+    const closing = currentUi?.panes?.[pane]?.tabs.find((t) => t.id === tabId) ?? null;
+    if (closing?.type === "preview") {
+      void window.xcoding.preview.destroy({ previewId: tabId });
+    }
     updateSlot(activeProjectSlot, (s) => {
       const nextTabs = s.panes[pane].tabs.filter((t) => t.id !== tabId);
       const nextActive = s.panes[pane].activeTabId === tabId ? nextTabs[0]?.id ?? "" : s.panes[pane].activeTabId;

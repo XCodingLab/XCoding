@@ -18,8 +18,15 @@ contextBridge.exposeInMainWorld("xcoding", {
     show: (payload) => ipcRenderer.invoke("preview:show", payload),
     hide: (payload) => ipcRenderer.invoke("preview:hide", payload),
     navigate: (payload) => ipcRenderer.invoke("preview:navigate", payload),
+    reload: (payload) => ipcRenderer.invoke("preview:reload", payload),
     destroy: (payload) => ipcRenderer.invoke("preview:destroy", payload),
     setBounds: (payload) => ipcRenderer.invoke("preview:setBounds", payload),
+    setPreserveLog: (payload) => ipcRenderer.invoke("preview:setPreserveLog", payload),
+    setEmulation: (payload) => ipcRenderer.invoke("preview:setEmulation", payload),
+    networkGetEntry: (payload) => ipcRenderer.invoke("preview:networkGetEntry", payload),
+    networkGetResponseBody: (payload) => ipcRenderer.invoke("preview:networkGetResponseBody", payload),
+    networkBuildCurl: (payload) => ipcRenderer.invoke("preview:networkBuildCurl", payload),
+    networkClearBrowserCache: (payload) => ipcRenderer.invoke("preview:networkClearBrowserCache", payload),
     onConsole: (listener) => {
       const wrapped = (_event, payload) => listener(payload);
       ipcRenderer.on("preview:console", wrapped);
@@ -29,6 +36,11 @@ contextBridge.exposeInMainWorld("xcoding", {
       const wrapped = (_event, payload) => listener(payload);
       ipcRenderer.on("preview:network", wrapped);
       return () => ipcRenderer.off("preview:network", wrapped);
+    },
+    onResetLogs: (listener) => {
+      const wrapped = (_event, payload) => listener(payload);
+      ipcRenderer.on("preview:resetLogs", wrapped);
+      return () => ipcRenderer.off("preview:resetLogs", wrapped);
     }
   },
   projects: {
@@ -163,7 +175,8 @@ contextBridge.exposeInMainWorld("xcoding", {
     setLayout: (payload) => ipcRenderer.invoke("settings:setLayout", payload)
   },
   os: {
-    copyText: (text) => ipcRenderer.invoke("os:copyText", { text })
+    copyText: (text) => ipcRenderer.invoke("os:copyText", { text }),
+    openExternal: (url) => ipcRenderer.invoke("os:openExternal", { url })
   },
   // window controls are defined above under xcoding.window
 });

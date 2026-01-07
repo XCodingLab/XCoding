@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Bug, Network, Eye } from "lucide-react";
+import { Bug, Network, Eye, Monitor, Smartphone, Tablet, RefreshCw, ExternalLink } from "lucide-react";
 import DiffView from "./DiffView";
 import { DiffViewer } from "../agent/shared";
 import CodexReviewDiffView from "./CodexReviewDiffView";
@@ -317,71 +317,134 @@ export default function ProjectWorkspaceMain(props: Props) {
                   );
                 }
                 if (tab.type === "preview") {
-                  const mode = activeUi.previewUi?.mode ?? "standard";
+                  const device = activeUi.previewUi?.device ?? "desktop";
                   return (
                     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded border border-[var(--vscode-panel-border)]">
-                      <div className="flex items-center gap-2 border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] p-2">
-                        <input
-                          className="min-w-0 flex-1 rounded bg-[var(--vscode-input-background)] px-2 py-1 text-xs text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
-                          value={tab.url}
-                          onChange={(e) => {
-                            const nextUrl = e.target.value;
-                            updateSlot(activeProjectSlot, (s) => ({
-                              ...s,
-                              panes: {
-                                ...s.panes,
-                                [pane]: {
-                                  ...s.panes[pane],
-                                  tabs: s.panes[pane].tabs.map((t2) => (t2.id === tab.id && t2.type === "preview" ? { ...t2, url: nextUrl } : t2))
+                      <div className="flex h-10 items-center justify-between gap-2 border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-2">
+                        <div className="flex items-center gap-1">
+                          <button
+                            className={[
+                              "rounded p-1",
+                              device === "desktop"
+                                ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
+                                : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                            ].join(" ")}
+                            onClick={() => {
+                              updateSlot(activeProjectSlot, (s) => ({ ...s, previewUi: { ...(s.previewUi ?? { device: "desktop" }), device: "desktop" } }));
+                            }}
+                            type="button"
+                            title={t("deviceDesktop")}
+                          >
+                            <Monitor className="h-4 w-4" />
+                          </button>
+                          <button
+                            className={[
+                              "rounded p-1",
+                              device === "tablet"
+                                ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
+                                : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                            ].join(" ")}
+                            onClick={() => {
+                              updateSlot(activeProjectSlot, (s) => ({ ...s, previewUi: { ...(s.previewUi ?? { device: "desktop" }), device: "tablet" } }));
+                            }}
+                            type="button"
+                            title={t("deviceTablet")}
+                          >
+                            <Tablet className="h-4 w-4" />
+                          </button>
+                          <button
+                            className={[
+                              "rounded p-1",
+                              device === "phone"
+                                ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
+                                : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                            ].join(" ")}
+                            onClick={() => {
+                              updateSlot(activeProjectSlot, (s) => ({ ...s, previewUi: { ...(s.previewUi ?? { device: "desktop" }), device: "phone" } }));
+                            }}
+                            type="button"
+                            title={t("devicePhone")}
+                          >
+                            <Smartphone className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="flex min-w-0 flex-1 items-center gap-1">
+                          <input
+                            className="min-w-0 flex-1 rounded bg-[var(--vscode-input-background)] px-2 py-1 text-xs text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
+                            value={tab.draftUrl ?? tab.url}
+                            onChange={(e) => {
+                              const nextUrl = e.target.value;
+                              updateSlot(activeProjectSlot, (s) => ({
+                                ...s,
+                                panes: {
+                                  ...s.panes,
+                                  [pane]: {
+                                    ...s.panes[pane],
+                                    tabs: s.panes[pane].tabs.map((t2) =>
+                                      t2.id === tab.id && t2.type === "preview" ? { ...t2, draftUrl: nextUrl } : t2
+                                    )
+                                  }
                                 }
-                              }
-                            }));
-                          }}
-                        />
-                        <button
-                          className="rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-1 text-xs text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
-                          onClick={() => void window.xcoding.preview.navigate({ previewId: tab.id, url: tab.url })}
-                          type="button"
-                        >
-                          Go
-                        </button>
-                        <button
-                          className={[
-                            "rounded px-2 py-1 text-[11px]",
-                            mode === "preview"
-                              ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
-                              : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
-                          ].join(" ")}
-                          onClick={() => {
-                            updateSlot(activeProjectSlot, (s) => ({
-                              ...s,
-                              previewUi: { mode: (s.previewUi?.mode ?? "standard") === "preview" ? "standard" : "preview" }
-                            }));
-                          }}
-                          type="button"
-                          title={mode === "preview" ? t("previewModeFocused") : t("standardModeShowCode")}
-                        >
-                          {mode === "preview" ? t("preview") : t("standard")}
-                        </button>
-                        <button
-                          className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                          onClick={() => showPanelTab("previewConsole")}
-                          type="button"
-                          title={t("console")}
-                        >
-                          <Bug className="h-4 w-4" />
-                        </button>
-                        <button
-                          className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                          onClick={() => showPanelTab("previewNetwork")}
-                          type="button"
-                          title={t("network")}
-                        >
-                          <Network className="h-4 w-4" />
-                        </button>
+                              }));
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key !== "Enter") return;
+                              e.preventDefault();
+                              const nextUrl = (e.currentTarget as HTMLInputElement).value;
+                              updateSlot(activeProjectSlot, (s) => ({
+                                ...s,
+                                panes: {
+                                  ...s.panes,
+                                  [pane]: {
+                                    ...s.panes[pane],
+                                    tabs: s.panes[pane].tabs.map((t2) =>
+                                      t2.id === tab.id && t2.type === "preview" ? { ...t2, url: nextUrl, draftUrl: nextUrl } : t2
+                                    )
+                                  }
+                                }
+                              }));
+                            }}
+                          />
+                          <button
+                            className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                            onClick={() => void window.xcoding.os.openExternal(tab.draftUrl ?? tab.url)}
+                            type="button"
+                            title={t("openInBrowser")}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                            onClick={() => void window.xcoding.preview.reload({ previewId: tab.id })}
+                            type="button"
+                            title={t("reload")}
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                            onClick={() => showPanelTab("previewConsole")}
+                            type="button"
+                            title={t("console")}
+                          >
+                            <Bug className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                            onClick={() => showPanelTab("previewNetwork")}
+                            type="button"
+                            title={t("network")}
+                          >
+                            <Network className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="min-h-0 flex-1 p-2">
-                        <PreviewView isActive={isTabActive} previewId={tab.id} url={tab.url} />
+                      <div className="min-h-0 flex-1">
+                        <PreviewView isActive={isTabActive} previewId={tab.id} url={tab.url} emulationMode={device} />
                       </div>
                     </div>
                   );
