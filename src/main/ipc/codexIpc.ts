@@ -5,6 +5,7 @@ import {
   applyCodexTurnSnapshot,
   ensureCodexBridge,
   getCodexStatusSnapshot,
+  readCodexTurnFileDiff,
   respondToCodex,
   restartCodexBridge,
   revertCodexTurnSnapshot,
@@ -52,7 +53,6 @@ export function registerCodexIpc() {
       const result = await ensureCodexBridge().request("thread/resume", params ?? {});
       return { ok: true, result };
     } catch (e) {
-      console.log("[codex:threadResume] error", e);
       return { ok: false, reason: e instanceof Error ? e.message : "codex_thread_resume_failed" };
     }
   });
@@ -289,7 +289,6 @@ export function registerCodexIpc() {
 
       return { ok: true, result: { turns } };
     } catch (e) {
-      console.log("[codex:sessionRead] error", e);
       return { ok: false, reason: e instanceof Error ? e.message : "session_read_failed" };
     }
   });
@@ -476,6 +475,19 @@ export function registerCodexIpc() {
     return applyCodexTurnSnapshot(String(threadId), String(turnId));
   });
 
+  ipcMain.handle("codex:turnFileDiff", async (_event, params: any) => {
+    try {
+      const threadId = String(params?.threadId ?? "");
+      const turnId = String(params?.turnId ?? "");
+      const relPath = String(params?.path ?? params?.relPath ?? "");
+      const maxBytes = typeof params?.maxBytes === "number" ? params.maxBytes : undefined;
+      const res = readCodexTurnFileDiff({ threadId, turnId, relPath, maxBytes });
+      return res;
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : "codex_turn_file_diff_failed" };
+    }
+  });
+
   ipcMain.handle("codex:respond", async (_event, { id, result, error }: { id: number; result?: any; error?: any }) => {
     try {
       respondToCodex({ id, result, error });
@@ -485,4 +497,3 @@ export function registerCodexIpc() {
     }
   });
 }
-

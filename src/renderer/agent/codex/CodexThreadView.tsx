@@ -270,7 +270,18 @@ function computeFileChangeSummary(turn: TurnView) {
   const fileChanges = items.filter((it: any) => String(it?.type ?? "") === "fileChange");
   if (!fileChanges.length) return null;
 
-  const byPath = new Map<string, { path: string; added: number; removed: number }>();
+  const byPath = new Map<string, { path: string; added: number; removed: number; kind?: string; parts: string[] }>();
+
+  const isRecognizableDiff = (diffText: string) => {
+    const raw = String(diffText ?? "");
+    if (!raw.trim()) return false;
+    return (
+      raw.includes("*** Begin Patch") ||
+      /^\*\*\* (Add File|Update File|Delete File):/m.test(raw) ||
+      raw.includes("diff --git ") ||
+      /^\s*(--- |\+\+\+ |@@)/m.test(raw)
+    );
+  };
 
   const addCountsFromDiff = (diffText: string) => {
     let added = 0;
@@ -286,26 +297,45 @@ function computeFileChangeSummary(turn: TurnView) {
   };
 
   let combinedDiff = "";
+  const applyPatchParts: string[] = [];
   for (const fc of fileChanges) {
     const changes = Array.isArray((fc as any)?.changes) ? (fc as any).changes : [];
     for (const c of changes) {
       const p = String(c?.path ?? "").trim();
       if (!p) continue;
+      const kind = String(c?.kind?.type ?? c?.kind ?? "").trim() || undefined;
       const diff = String(c?.diff ?? "");
       const { added, removed } = addCountsFromDiff(diff);
-      const prev = byPath.get(p) ?? { path: p, added: 0, removed: 0 };
+      const prev = byPath.get(p) ?? { path: p, added: 0, removed: 0, kind, parts: [] };
       prev.added += added;
       prev.removed += removed;
+      if (!prev.kind && kind) prev.kind = kind;
       byPath.set(p, prev);
-      if (diff.trim()) combinedDiff += (combinedDiff ? "\n" : "") + diff.trim() + "\n";
+      const trimmed = diff.trim();
+      if (!trimmed) continue;
+      prev.parts.push(trimmed);
+      if (isRecognizableDiff(trimmed)) combinedDiff += (combinedDiff ? "\n" : "") + trimmed + "\n";
+      else applyPatchParts.push(`*** Update File: ${p}\n${trimmed}\n`);
     }
   }
 
-  const files = Array.from(byPath.values()).sort((a, b) => a.path.localeCompare(b.path));
+  const files = Array.from(byPath.values())
+    .map((f) => ({ path: f.path, added: f.added, removed: f.removed }))
+    .sort((a, b) => a.path.localeCompare(b.path));
   if (!files.length) return null;
+  const reviewFiles = Array.from(byPath.values())
+    .map((f) => ({ path: f.path, added: f.added, removed: f.removed, kind: f.kind, diff: f.parts.join("\n").trim() }))
+    .sort((a, b) => a.path.localeCompare(b.path));
   const fallbackDiff = typeof (turn as any)?.diff === "string" ? String((turn as any).diff) : "";
-  const diff = fallbackDiff.trim() ? fallbackDiff : combinedDiff.trim();
-  return { files, diff };
+  const fallbackTrimmed = fallbackDiff.trim();
+  const diff = fallbackTrimmed && isRecognizableDiff(fallbackTrimmed)
+    ? fallbackTrimmed
+    : combinedDiff.trim()
+      ? combinedDiff.trim()
+      : applyPatchParts.length
+        ? `*** Begin Patch\n${applyPatchParts.join("\n").trim()}\n*** End Patch`
+        : fallbackTrimmed || "";
+  return { files, diff, reviewFiles };
 }
 
 function titleForItem(item: any) {
@@ -721,7 +751,13 @@ export default function CodexThreadView({
         }
 
         if (type === "turnChangesSummary") {
-          const summary = (item as any)?.summary as { files: Array<{ path: string; added: number; removed: number }>; diff: string } | undefined;
+          const summary = (item as any)?.summary as
+            | {
+                files: Array<{ path: string; added: number; removed: number }>;
+                diff: string;
+                reviewFiles?: Array<{ path: string; added: number; removed: number; kind?: string; diff: string }>;
+              }
+            | undefined;
           const files = Array.isArray(summary?.files) ? summary!.files : [];
           const count = files.length;
           if (!count) return null;
@@ -734,9 +770,16 @@ export default function CodexThreadView({
                   type="button"
                   className="rounded px-2 py-1 text-[12px] font-semibold text-[var(--vscode-foreground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
                   onClick={() => {
-                    const diff = String(summary?.diff ?? "");
-                    if (!diff.trim()) return;
-                    window.dispatchEvent(new CustomEvent("xcoding:openCodexDiff", { detail: { title: "Review changes", diff, tabId: `review:${turn.id}` } }));
+                    // Recompute at click time so we don't get stuck with memoized (pre-HMR) summary output.
+                    const latest = computeFileChangeSummary(turn) ?? summary;
+                    const diff = String((latest as any)?.diff ?? "");
+                    const reviewFiles = Array.isArray((latest as any)?.reviewFiles) ? (latest as any).reviewFiles : [];
+                    if (!reviewFiles.length && !diff.trim()) return;
+                    window.dispatchEvent(
+                      new CustomEvent("xcoding:openCodexDiff", {
+                        detail: { title: "Review changes", diff, reviewFiles, threadId: thread?.id, turnId: turn.id, tabId: `review:${turn.id}` }
+                      })
+                    );
                   }}
                   title="Review"
                 >

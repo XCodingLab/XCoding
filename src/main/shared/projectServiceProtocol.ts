@@ -7,6 +7,14 @@ export type ProjectServiceRequest =
   | { id: string; type: "fs:listDir"; relDir: string }
   | { id: string; type: "fs:searchPaths"; query: string; limit?: number }
   | { id: string; type: "fs:gitStatus"; maxEntries?: number }
+  | { id: string; type: "fs:gitInfo" }
+  | { id: string; type: "fs:gitChanges"; maxEntries?: number }
+  | { id: string; type: "fs:gitDiff"; path: string; mode: "working" | "staged"; maxBytes?: number }
+  | { id: string; type: "fs:gitFileDiff"; path: string; mode: "working" | "staged"; maxBytes?: number }
+  | { id: string; type: "fs:gitStage"; paths: string[] }
+  | { id: string; type: "fs:gitUnstage"; paths: string[] }
+  | { id: string; type: "fs:gitDiscard"; paths: string[]; includeUntracked?: boolean }
+  | { id: string; type: "fs:gitCommit"; message: string; amend?: boolean }
   | { id: string; type: "fs:searchFiles"; query: string; maxResults?: number; useGitignore?: boolean }
   | {
       id: string;

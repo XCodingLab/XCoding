@@ -286,6 +286,128 @@ export function applyCodexTurnSnapshot(threadId: string, turnId: string) {
   return { ok: true as const };
 }
 
+function isProbablyBinaryBuffer(buf: Buffer) {
+  const sample = buf.subarray(0, Math.min(buf.length, 8192));
+  if (!sample.length) return false;
+  let suspicious = 0;
+  for (const b of sample) {
+    if (b === 0) return true;
+    if (b < 7 || (b > 13 && b < 32)) suspicious += 1;
+  }
+  return suspicious / sample.length > 0.3;
+}
+
+function readFileLimited(absPath: string, maxBytes: number): { buf: Buffer; truncated: boolean } {
+  const st = fs.statSync(absPath);
+  if (!st.isFile()) return { buf: Buffer.from(""), truncated: false };
+  const truncated = st.size > maxBytes;
+  const size = truncated ? maxBytes : st.size;
+  if (size <= 0) return { buf: Buffer.from(""), truncated };
+  const fd = fs.openSync(absPath, "r");
+  try {
+    const buf = Buffer.alloc(size);
+    const read = fs.readSync(fd, buf, 0, size, 0);
+    return { buf: read === size ? buf : buf.subarray(0, read), truncated };
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function safeReadSnapshotManifest(threadId: string, turnId: string): any | null {
+  const root = ensureCodexSnapshotsRoot();
+  const snapDir = path.join(root, encodeURIComponent(threadId), encodeURIComponent(turnId));
+  const manifestPath = path.join(snapDir, "manifest.json");
+  if (!fs.existsSync(manifestPath)) return null;
+  try {
+    const raw = fs.readFileSync(manifestPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function readCodexTurnFileDiff({
+  threadId,
+  turnId,
+  relPath,
+  maxBytes
+}: {
+  threadId: string;
+  turnId: string;
+  relPath: string;
+  maxBytes?: number;
+}):
+  | { ok: true; original: string; modified: string; truncated: boolean; isBinary: boolean }
+  | { ok: false; reason: string } {
+  const normalizedThreadId = String(threadId ?? "").trim();
+  const normalizedTurnId = String(turnId ?? "").trim();
+  const normalizedRelPath = safeRelPath(relPath);
+  const limit = typeof maxBytes === "number" ? Math.max(50_000, Math.min(15_000_000, Math.floor(maxBytes))) : 3_000_000;
+
+  if (!normalizedThreadId || !normalizedTurnId || !normalizedRelPath) return { ok: false, reason: "missing_ids_or_path" };
+
+  const snapshot = safeReadSnapshotManifest(normalizedThreadId, normalizedTurnId);
+  if (!snapshot) return { ok: false, reason: "no_snapshot" };
+  const snapshotCwd = typeof snapshot?.cwd === "string" ? snapshot.cwd : "";
+  const resolvedSnapshotCwd = snapshotCwd ? path.resolve(snapshotCwd) : "";
+  if (!resolvedSnapshotCwd) return { ok: false, reason: "invalid_snapshot_cwd" };
+  const entries = Array.isArray(snapshot?.entries) ? snapshot.entries : [];
+  const entry = entries.find((e: any) => safeRelPath(e?.relPath) === normalizedRelPath) ?? null;
+  if (!entry) return { ok: false, reason: "snapshot_entry_not_found" };
+
+  const root = ensureCodexSnapshotsRoot();
+  const snapDir = path.join(root, encodeURIComponent(normalizedThreadId), encodeURIComponent(normalizedTurnId));
+  const snapshotFileName = String(entry?.snapshotFile ?? "");
+  const snapshotFile = snapshotFileName ? path.join(snapDir, snapshotFileName) : "";
+  const resolvedSnapshotFile = snapshotFile ? path.resolve(snapshotFile) : "";
+  const resolvedSnapDir = path.resolve(snapDir);
+  if (!resolvedSnapshotFile || !resolvedSnapshotFile.startsWith(resolvedSnapDir + path.sep)) return { ok: false, reason: "invalid_snapshot_path" };
+
+  let truncated = false;
+  let isBinary = false;
+
+  let originalBuf: Buffer<ArrayBufferLike> = Buffer.alloc(0) as Buffer<ArrayBufferLike>;
+  const existed = Boolean(entry?.existed);
+  if (existed && fs.existsSync(resolvedSnapshotFile)) {
+    const r = readFileLimited(resolvedSnapshotFile, limit);
+    truncated = truncated || r.truncated;
+    originalBuf = r.buf;
+    isBinary = isBinary || isProbablyBinaryBuffer(originalBuf);
+  }
+
+  let modifiedBuf: Buffer<ArrayBufferLike> = Buffer.alloc(0) as Buffer<ArrayBufferLike>;
+  const absPath = String(entry?.absPath ?? "");
+  const resolvedAbs = absPath ? path.resolve(absPath) : "";
+  if (resolvedAbs && (resolvedAbs === resolvedSnapshotCwd || resolvedAbs.startsWith(resolvedSnapshotCwd + path.sep)) && fs.existsSync(resolvedAbs)) {
+    try {
+      const r = readFileLimited(resolvedAbs, limit);
+      truncated = truncated || r.truncated;
+      modifiedBuf = r.buf;
+      isBinary = isBinary || isProbablyBinaryBuffer(modifiedBuf);
+    } catch {
+      modifiedBuf = Buffer.alloc(0) as Buffer<ArrayBufferLike>;
+    }
+  } else if (resolvedAbs) {
+    return { ok: false, reason: "invalid_abs_path" };
+  }
+
+  if (isBinary) return { ok: true, original: "", modified: "", truncated: false, isBinary: true };
+
+  return {
+    ok: true,
+    original: originalBuf.toString("utf8"),
+    modified: modifiedBuf.toString("utf8"),
+    truncated,
+    isBinary: false
+  };
+}
+
 export async function restartCodexBridge() {
   if (codexBridge) codexBridge.dispose();
   codexBridge = null;
@@ -312,4 +434,3 @@ export function respondToCodex({ id, result, error }: { id: number; result?: any
   codexPendingRequestsById.delete(reqId);
   ensureCodexBridge().respond(Number(id), result, error);
 }
-

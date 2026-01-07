@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import { Bug, Network, Eye } from "lucide-react";
 import DiffView from "./DiffView";
-import { CodexDiffView } from "../agent/codex";
+import { DiffViewer } from "../agent/shared";
+import CodexReviewDiffView from "./CodexReviewDiffView";
+import GitDiffView from "./GitDiffView";
 import FileEditor from "./FileEditor";
 import LayoutManager, { type LayoutMode, type PaneId, type SplitIntent } from "./LayoutManager";
 import MarkdownPreviewView from "./MarkdownPreviewView";
@@ -8,7 +11,7 @@ import ImagePreviewView from "./ImagePreviewView";
 import PreviewView from "./PreviewView";
 import TerminalPanel, { type TerminalPanelState } from "./TerminalPanel";
 import WelcomeView from "./WelcomeView";
-import type { AnyTab, SlotUiState } from "./appTypes";
+import type { AnyTab, SlotUiState, WorkflowStage } from "./appTypes";
 
 function isMarkdownFilePath(relPath: string) {
   const lower = relPath.toLowerCase();
@@ -20,6 +23,7 @@ type Props = {
   activeProjectSlot: number;
   activeProjectPath?: string;
   isActiveSlotBound: boolean;
+  workflowStage: WorkflowStage;
   recentProjects: Array<{ id: string; name: string; path: string; lastOpenedAt: number }>;
   openFolderIntoSlot: (slot: number) => Promise<unknown>;
   bindProjectIntoSlot: (slot: number, path: string) => Promise<boolean>;
@@ -48,6 +52,7 @@ export default function ProjectWorkspaceMain(props: Props) {
     activeProjectSlot,
     activeProjectPath,
     isActiveSlotBound,
+    workflowStage,
     recentProjects,
     openFolderIntoSlot,
     bindProjectIntoSlot,
@@ -67,6 +72,26 @@ export default function ProjectWorkspaceMain(props: Props) {
     activePreviewTab
   } = props;
 
+  const visibleUi = useMemo(() => {
+    const allow = (tab: AnyTab) => {
+      if (workflowStage === "preview") return tab.type === "preview";
+      if (workflowStage === "review") return tab.type === "gitDiff";
+      // develop: editor-oriented tabs only
+      if (tab.type === "preview") return false;
+      if (tab.type === "gitDiff") return false;
+      return true;
+    };
+
+    const nextPanes: typeof activeUi.panes = { ...activeUi.panes };
+    (Object.keys(nextPanes) as Array<keyof typeof nextPanes>).forEach((p) => {
+      const pane = nextPanes[p];
+      const filtered = pane.tabs.filter(allow);
+      const activeStillExists = filtered.some((t2) => t2.id === pane.activeTabId);
+      nextPanes[p] = { tabs: filtered, activeTabId: activeStillExists ? pane.activeTabId : filtered[0]?.id ?? "" };
+    });
+    return { ...activeUi, panes: nextPanes };
+  }, [activeUi, workflowStage]);
+
   return (
     <main className="min-w-0 flex-1 bg-[var(--vscode-editor-background)]">
       {!isActiveSlotBound ? (
@@ -79,10 +104,10 @@ export default function ProjectWorkspaceMain(props: Props) {
         <div className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1 p-3">
             <LayoutManager
-              mode={activeUi.layoutMode}
-              split={activeUi.layoutSplit}
-              activePane={activeUi.activePane}
-              panes={activeUi.panes}
+              mode={visibleUi.layoutMode}
+              split={visibleUi.layoutSplit}
+              activePane={visibleUi.activePane}
+              panes={visibleUi.panes}
               onTabDragStateChange={setIsDraggingTab}
               setSplit={(next) => updateSlot(activeProjectSlot, (s) => ({ ...s, layoutSplit: next }))}
               setActivePane={(pane) => updateSlot(activeProjectSlot, (s) => ({ ...s, activePane: pane }))}
@@ -249,7 +274,7 @@ export default function ProjectWorkspaceMain(props: Props) {
               }}
               renderTabLabel={(tab) => ("dirty" in tab && tab.dirty ? `${tab.title} *` : tab.title)}
               renderTab={(pane, tab) => {
-                const isTabActive = tab.id === activeUi.panes[pane].activeTabId;
+                const isTabActive = tab.id === visibleUi.panes[pane].activeTabId;
                 if (tab.type === "markdown") {
                   return (
                     <MarkdownPreviewView
@@ -363,7 +388,27 @@ export default function ProjectWorkspaceMain(props: Props) {
                 }
                 if (tab.type === "image") return <ImagePreviewView url={tab.url} title={tab.title} />;
                 if (tab.type === "diff") return <DiffView slot={activeProjectSlot} path={tab.path} stagedContent={tab.stagedContent} />;
-                if (tab.type === "codexDiff") return <CodexDiffView diff={tab.diff} />;
+                if (tab.type === "unifiedDiff")
+                  return (
+                    <DiffViewer
+                      diff={tab.diff}
+                      defaultViewMode="side-by-side"
+                      showFileList={true}
+                      showMetaLines={tab.source !== "codex"}
+                    />
+                  );
+                if (tab.type === "codexReviewDiff")
+                  return (
+                    <CodexReviewDiffView
+                      tabId={tab.id}
+                      slot={activeProjectSlot}
+                      threadId={tab.threadId}
+                      turnId={tab.turnId}
+                      files={tab.files}
+                      activePath={tab.activePath}
+                    />
+                  );
+                if (tab.type === "gitDiff") return <GitDiffView slot={activeProjectSlot} path={tab.path} mode={tab.mode} />;
                 if (tab.type === "file") {
                   const rightExtras =
                     isMarkdownFilePath(tab.path) && activeProjectPath

@@ -2,6 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { FSWatcher } from "chokidar";
@@ -85,6 +86,22 @@ let watcher: FSWatcher | null = null;
 let watcherPaused = false;
 let gitignore: GitignoreMatcher | null = null;
 let gitStatusCache: { at: number; entries: Record<string, string> } | null = null;
+let gitInfoCache: { at: number; info: { isRepo: boolean; repoRoot?: string; branch?: string } } | null = null;
+let gitChangesCache:
+  | {
+      at: number;
+      changes: {
+        isRepo: boolean;
+        repoRoot?: string;
+        branch?: string;
+        staged: string[];
+        unstaged: string[];
+        untracked: string[];
+        conflict: string[];
+        statusByPath: Record<string, string>;
+      };
+    }
+  | null = null;
 let rgPath: string | null = null;
 let rgChecked = false;
 let chokidarModule: typeof import("chokidar") | null = null;
@@ -531,6 +548,227 @@ function getGitStatusPorcelain(cwd: string, maxEntries: number): Record<string, 
   }
 }
 
+function normalizeGitRelPath(input: string) {
+  const raw = String(input ?? "").replace(/[\\\\]+/g, "/").replace(/^([/\\\\])+/, "");
+  const normalized = path.posix.normalize(raw);
+  if (!normalized || normalized === ".") return "";
+  if (normalized.startsWith("..")) throw new Error("path_escape");
+  return normalized;
+}
+
+function isNotGitRepoError(err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return msg.includes("not a git repository");
+}
+
+async function runGitCapture(
+  cwd: string,
+  args: string[],
+  options?: { timeoutMs?: number; maxBytes?: number; allowExitCodes?: number[] }
+): Promise<{ stdout: string; stderr: string; truncated: boolean; exitCode: number | null }> {
+  const allowExitCodes = options?.allowExitCodes ?? [0];
+  const maxBytes = typeof options?.maxBytes === "number" ? Math.max(1_000, options.maxBytes) : null;
+  const timeoutMs = typeof options?.timeoutMs === "number" ? Math.max(200, options.timeoutMs) : 0;
+
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let truncated = false;
+    let killedForTruncation = false;
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const proc = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+
+    const finish = (exitCode: number | null) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = null;
+      const ok = killedForTruncation || (typeof exitCode === "number" && allowExitCodes.includes(exitCode));
+      if (!ok) {
+        const msg = (stderr || stdout || "").trim() || `git_exit_${exitCode ?? "null"}`;
+        reject(new Error(msg));
+        return;
+      }
+      resolve({ stdout, stderr, truncated, exitCode });
+    };
+
+    if (timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {
+          // ignore
+        }
+        reject(new Error("git_timeout"));
+      }, timeoutMs);
+    }
+
+    proc.on("error", (err) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = null;
+      reject(err);
+    });
+
+    proc.stdout?.on("data", (chunk) => {
+      if (killedForTruncation) return;
+      const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk ?? "");
+      if (!text) return;
+      stdout += text;
+      if (maxBytes && stdout.length > maxBytes) {
+        stdout = stdout.slice(0, maxBytes);
+        truncated = true;
+        killedForTruncation = true;
+        try {
+          proc.kill();
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    proc.stderr?.on("data", (chunk) => {
+      if (killedForTruncation) return;
+      const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk ?? "");
+      if (!text) return;
+      stderr += text;
+      if (maxBytes && stderr.length > maxBytes) stderr = stderr.slice(0, maxBytes);
+    });
+
+    proc.on("close", (code) => finish(typeof code === "number" ? code : null));
+  });
+}
+
+async function getGitRepoInfo(cwd: string) {
+  try {
+    const rootRes = await runGitCapture(cwd, ["rev-parse", "--show-toplevel"], { timeoutMs: 4000 });
+    const repoRoot = rootRes.stdout.trim();
+    if (!repoRoot) return { isRepo: true as const, repoRoot: cwd };
+
+    let branch = "";
+    try {
+      const branchRes = await runGitCapture(cwd, ["symbolic-ref", "--short", "HEAD"], { timeoutMs: 2500 });
+      branch = branchRes.stdout.trim();
+    } catch {
+      try {
+        const branchRes = await runGitCapture(cwd, ["rev-parse", "--abbrev-ref", "HEAD"], { timeoutMs: 2500 });
+        branch = branchRes.stdout.trim();
+      } catch {
+        // ignore
+      }
+    }
+
+    return { isRepo: true as const, repoRoot, branch: branch || undefined };
+  } catch (e) {
+    if (isNotGitRepoError(e)) return { isRepo: false as const };
+    throw e;
+  }
+}
+
+function parseGitStatusPorcelainV1Z(output: string, maxEntries: number) {
+  const parts = String(output ?? "").split("\0").filter(Boolean);
+  const entries: Array<{ path: string; x: string; y: string; from?: string }> = [];
+  for (let i = 0; i < parts.length; i += 1) {
+    if (entries.length >= maxEntries) break;
+    const rec = parts[i] ?? "";
+    if (rec.length < 4) continue;
+    const x = rec[0];
+    const y = rec[1];
+    const rest = rec.slice(3);
+    const isRename = x === "R" || x === "C";
+    if (isRename) {
+      const from = rest.replace(/[\\\\]+/g, "/");
+      const to = (parts[i + 1] ?? "").replace(/[\\\\]+/g, "/");
+      if (to) {
+        entries.push({ path: to, x, y, from });
+        i += 1;
+        continue;
+      }
+      if (from.includes(" -> ")) {
+        const to2 = from.split(" -> ").pop() ?? "";
+        const from2 = from.split(" -> ")[0] ?? "";
+        if (to2) entries.push({ path: to2, x, y, from: from2 || undefined });
+        continue;
+      }
+      if (from) entries.push({ path: from, x, y });
+      continue;
+    }
+    const p = rest.replace(/[\\\\]+/g, "/");
+    if (!p) continue;
+    entries.push({ path: p, x, y });
+  }
+  return entries;
+}
+
+function mapPorcelainToStatusLetter(x: string, y: string) {
+  const xy = `${x}${y}`;
+  const conflictSet = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+  if (conflictSet.has(xy) || x === "U" || y === "U") return "U";
+  if (xy === "??") return "?";
+  if (x === "D" || y === "D") return "D";
+  if (x === "A") return "A";
+  if (x === "R") return "R";
+  if (x === "C") return "C";
+  if (x === "M" || y === "M") return "M";
+  if (x === "!") return "!";
+  return x.trim() || y.trim() || "";
+}
+
+function makeNewFileUnifiedDiff(relPath: string, content: string) {
+  const normalizedPath = relPath.replace(/^([/\\\\])+/, "").replace(/[\\\\]+/g, "/");
+  const normalized = content.replace(/\r\n/g, "\n");
+  const hasFinalNewline = normalized.endsWith("\n");
+  const lines = normalized.split("\n");
+  if (hasFinalNewline) lines.pop();
+  const lineCount = lines.length;
+  const header = [
+    `diff --git a/${normalizedPath} b/${normalizedPath}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${normalizedPath}`
+  ];
+  if (lineCount === 0) return `${header.join("\n")}\n`;
+  const hunk = [`@@ -0,0 +1,${lineCount} @@`, ...lines.map((l) => `+${l}`)];
+  const eof = hasFinalNewline ? [] : ["\\ No newline at end of file"];
+  return `${[...header, ...hunk, ...eof].join("\n")}\n`;
+}
+
+function readUtf8FileLimited(absPath: string, maxBytes: number): { text: string; truncated: boolean } {
+  const st = fs.statSync(absPath);
+  if (!st.isFile()) return { text: "", truncated: false };
+  const size = st.size ?? 0;
+  if (size <= 0) return { text: "", truncated: false };
+  const truncated = size > maxBytes;
+  const toRead = truncated ? maxBytes : size;
+  if (toRead <= 0) return { text: "", truncated };
+  const fd = fs.openSync(absPath, "r");
+  try {
+    const buf = Buffer.alloc(toRead);
+    const read = fs.readSync(fd, buf, 0, toRead, 0);
+    const sliced = read === toRead ? buf : buf.subarray(0, read);
+    return { text: sliced.toString("utf8"), truncated };
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function isGitBinaryPath(repoCwd: string, relPath: string) {
+  // git diff --numstat returns "-" "-" for binary diffs.
+  try {
+    const res = await runGitCapture(repoCwd, ["diff", "--numstat", "--no-color", "--", relPath], { timeoutMs: 7000, maxBytes: 300_000, allowExitCodes: [0, 1] });
+    const firstLine = res.stdout.split("\n").find((l) => l.trim()) ?? "";
+    if (!firstLine) return false;
+    const parts = firstLine.split("\t");
+    const added = (parts[0] ?? "").trim();
+    const removed = (parts[1] ?? "").trim();
+    return added === "-" && removed === "-";
+  } catch {
+    return false;
+  }
+}
+
 function reply(message: ResponseMessage) {
   if (typeof process.send === "function") process.send(message);
 }
@@ -561,6 +799,8 @@ function ensureWatcherStarted() {
     watcher.on("all", (event, absPath) => {
       if (watcherPaused || !root) return;
       gitStatusCache = null;
+      gitInfoCache = null;
+      gitChangesCache = null;
       const rel = path.relative(root, absPath).replace(/[\\\\]+/g, "/");
       if (rel.startsWith("..")) return;
       sendEvent({ type: "watcher", event, path: rel, timestamp: Date.now() });
@@ -735,6 +975,359 @@ process.on("message", (msg: RequestMessage) => {
         gitStatusCache = { at: now, entries: getGitStatusPorcelain(root, maxEntries) };
       }
       reply({ id: msg.id, ok: true, result: { entries: gitStatusCache.entries } });
+      return;
+    }
+
+    if (msg.type === "fs:gitInfo") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const now = Date.now();
+        if (!gitInfoCache || now - gitInfoCache.at > 1200) {
+          const info = await getGitRepoInfo(root);
+          gitInfoCache = { at: now, info: info.isRepo ? { isRepo: true, repoRoot: info.repoRoot, branch: info.branch } : { isRepo: false } };
+        }
+        reply({ id: msg.id, ok: true, result: gitInfoCache.info });
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_info_failed" });
+      });
+      return;
+    }
+
+    if (msg.type === "fs:gitChanges") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const maxEntries = typeof msg.maxEntries === "number" ? Math.max(10, Math.min(200000, msg.maxEntries)) : 50000;
+        const now = Date.now();
+        if (gitChangesCache && now - gitChangesCache.at <= 1200) {
+          reply({ id: msg.id, ok: true, result: gitChangesCache.changes });
+          return;
+        }
+
+        const info = await getGitRepoInfo(root);
+        if (!info.isRepo) {
+          const empty = { isRepo: false, staged: [], unstaged: [], untracked: [], conflict: [], statusByPath: {} };
+          gitChangesCache = { at: now, changes: empty };
+          reply({ id: msg.id, ok: true, result: empty });
+          return;
+        }
+
+        const statusRes = await runGitCapture(root, ["status", "--porcelain=v1", "-z"], { timeoutMs: 7000, maxBytes: 5_000_000 });
+        const parsed = parseGitStatusPorcelainV1Z(statusRes.stdout, maxEntries);
+
+        const staged: string[] = [];
+        const unstaged: string[] = [];
+        const untracked: string[] = [];
+        const conflict: string[] = [];
+        const statusByPath: Record<string, string> = {};
+
+        const conflictSet = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+
+        for (const ent of parsed) {
+          const rel = normalizeGitRelPath(ent.path);
+          if (!rel) continue;
+          const x = ent.x;
+          const y = ent.y;
+          const xy = `${x}${y}`;
+
+          const letter = mapPorcelainToStatusLetter(x, y);
+          if (letter) statusByPath[rel] = letter;
+
+          if (xy === "??") {
+            untracked.push(rel);
+          } else {
+            if (x && x !== " " && x !== "?") staged.push(rel);
+            if (y && y !== " " && y !== "?") unstaged.push(rel);
+            if (conflictSet.has(xy) || x === "U" || y === "U") conflict.push(rel);
+          }
+        }
+
+        const changes = { isRepo: true, repoRoot: info.repoRoot, branch: info.branch, staged, unstaged, untracked, conflict, statusByPath };
+        gitChangesCache = { at: now, changes };
+        gitInfoCache = { at: now, info: { isRepo: true, repoRoot: info.repoRoot, branch: info.branch } };
+        reply({ id: msg.id, ok: true, result: changes });
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_changes_failed" });
+      });
+      return;
+    }
+
+    if (msg.type === "fs:gitDiff") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const relPath = normalizeGitRelPath(msg.path);
+        if (!relPath) throw new Error("invalid_path");
+        const mode = msg.mode === "staged" ? "staged" : "working";
+        const maxBytes = typeof msg.maxBytes === "number" ? Math.max(50_000, Math.min(20_000_000, msg.maxBytes)) : 3_000_000;
+
+        const info = await getGitRepoInfo(root);
+        if (!info.isRepo) throw new Error("not_a_git_repo");
+
+        const now = Date.now();
+        const cachedChanges = gitChangesCache && now - gitChangesCache.at <= 1200 ? gitChangesCache.changes : null;
+        let statusLetter = cachedChanges?.statusByPath?.[relPath] ?? "";
+        if (!statusLetter) {
+          try {
+            const oneRes = await runGitCapture(root, ["status", "--porcelain=v1", "-z", "--", relPath], { timeoutMs: 4000, maxBytes: 200_000 });
+            const parsed = parseGitStatusPorcelainV1Z(oneRes.stdout, 50);
+            const match = parsed.find((p) => normalizeGitRelPath(p.path) === relPath) ?? parsed[0] ?? null;
+            if (match) statusLetter = mapPorcelainToStatusLetter(match.x, match.y);
+          } catch {
+            // ignore
+          }
+        }
+
+	        if (mode === "working" && statusLetter === "?") {
+	          const abs = safeJoin(relPath);
+	          const st = await stat(abs).catch(() => null);
+	          const isText = st?.isFile() && (TEXT_EXTENSIONS.has(path.extname(relPath).toLowerCase()) || (st?.size ?? 0) <= 200_000);
+	          if (!st?.isFile()) throw new Error("file_not_found");
+	          if (!isText) {
+            const header = [
+              `diff --git a/${relPath} b/${relPath}`,
+              "new file mode 100644",
+              "--- /dev/null",
+              `+++ b/${relPath}`,
+              `Binary files /dev/null and b/${relPath} differ`
+            ];
+	            reply({ id: msg.id, ok: true, result: { diff: `${header.join("\n")}\n`, truncated: false } });
+	            return;
+	          }
+	          const limited = readUtf8FileLimited(abs, maxBytes);
+	          reply({ id: msg.id, ok: true, result: { diff: makeNewFileUnifiedDiff(relPath, limited.text), truncated: limited.truncated } });
+	          return;
+	        }
+
+        const args = ["diff", "--no-color", "--no-ext-diff", ...(mode === "staged" ? ["--staged"] : []), "--", relPath];
+        const diffRes = await runGitCapture(root, args, { timeoutMs: 10_000, maxBytes });
+        reply({ id: msg.id, ok: true, result: { diff: diffRes.stdout, truncated: diffRes.truncated } });
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_diff_failed" });
+      });
+      return;
+    }
+
+    if (msg.type === "fs:gitFileDiff") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const repoCwd = root;
+        const relPath = normalizeGitRelPath(msg.path);
+        if (!relPath) throw new Error("invalid_path");
+        const mode = msg.mode === "staged" ? "staged" : "working";
+        const maxBytes = typeof msg.maxBytes === "number" ? Math.max(50_000, Math.min(15_000_000, msg.maxBytes)) : 3_000_000;
+
+        const info = await getGitRepoInfo(repoCwd);
+        if (!info.isRepo) throw new Error("not_a_git_repo");
+
+        // For untracked file in working mode: original is empty, modified is disk content.
+        const statusRes = await runGitCapture(repoCwd, ["status", "--porcelain=v1", "-z", "--", relPath], { timeoutMs: 4000, maxBytes: 200_000 });
+        const parsed = parseGitStatusPorcelainV1Z(statusRes.stdout, 10);
+        const match = parsed.find((p) => normalizeGitRelPath(p.path) === relPath) ?? parsed[0] ?? null;
+        const xy = match ? `${match.x}${match.y}` : "";
+
+	        if (mode === "working" && xy === "??") {
+	          const abs = safeJoin(relPath);
+	          const st = await stat(abs).catch(() => null);
+	          if (!st?.isFile()) throw new Error("file_not_found");
+	          const limited = readUtf8FileLimited(abs, maxBytes);
+	          reply({ id: msg.id, ok: true, result: { original: "", modified: limited.text, truncated: limited.truncated, isBinary: false } });
+	          return;
+	        }
+
+        // Binary detection: keep it simple (only for working tree diff).
+        const isBinary = mode === "working" ? await isGitBinaryPath(repoCwd, relPath) : false;
+        if (isBinary) {
+          reply({ id: msg.id, ok: true, result: { original: "", modified: "", truncated: false, isBinary: true } });
+          return;
+        }
+
+        // VSCode-like: staged = HEAD vs index; working = index/HEAD vs working tree.
+        const readGitShow = async (spec: string) => {
+          try {
+            const r = await runGitCapture(repoCwd, ["show", spec], { timeoutMs: 10_000, maxBytes });
+            return { text: r.stdout, truncated: r.truncated };
+          } catch {
+            return { text: "", truncated: false };
+          }
+        };
+
+        let original = "";
+        let modified = "";
+        let truncated = false;
+
+        if (mode === "staged") {
+          const a = await readGitShow(`HEAD:${relPath}`);
+          const b = await readGitShow(`:${relPath}`);
+          original = a.text;
+          modified = b.text;
+          truncated = a.truncated || b.truncated;
+        } else {
+          // working: prefer index as original; fallback to HEAD for new files.
+          const a = await readGitShow(`:${relPath}`);
+          const a2 = !a.text ? await readGitShow(`HEAD:${relPath}`) : null;
+          original = a.text || a2?.text || "";
+          truncated = a.truncated || Boolean(a2?.truncated);
+
+	          const abs = safeJoin(relPath);
+	          const st = await stat(abs).catch(() => null);
+	          if (st?.isFile()) {
+	            try {
+	              const limited = readUtf8FileLimited(abs, maxBytes);
+	              modified = limited.text;
+	              truncated = truncated || limited.truncated;
+	            } catch {
+	              modified = "";
+	            }
+	          } else {
+	            modified = "";
+	          }
+	        }
+
+        reply({ id: msg.id, ok: true, result: { original, modified, truncated, isBinary: false } });
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_file_diff_failed" });
+      });
+      return;
+    }
+
+    if (msg.type === "fs:gitStage") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const info = await getGitRepoInfo(root);
+        if (!info.isRepo) throw new Error("not_a_git_repo");
+        const paths = Array.isArray(msg.paths) ? msg.paths.map((p) => normalizeGitRelPath(p)).filter(Boolean) : [];
+        if (paths.length === 0) {
+          reply({ id: msg.id, ok: true, result: { staged: true } });
+          return;
+        }
+        await runGitCapture(root, ["add", "--", ...paths], { timeoutMs: 30_000 });
+        gitStatusCache = null;
+        gitInfoCache = null;
+        gitChangesCache = null;
+        reply({ id: msg.id, ok: true, result: { staged: true } });
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_stage_failed" });
+      });
+      return;
+    }
+
+    if (msg.type === "fs:gitUnstage") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const info = await getGitRepoInfo(root);
+        if (!info.isRepo) throw new Error("not_a_git_repo");
+        const paths = Array.isArray(msg.paths) ? msg.paths.map((p) => normalizeGitRelPath(p)).filter(Boolean) : [];
+        if (paths.length === 0) {
+          reply({ id: msg.id, ok: true, result: { unstaged: true } });
+          return;
+        }
+        try {
+          await runGitCapture(root, ["reset", "-q", "HEAD", "--", ...paths], { timeoutMs: 30_000 });
+        } catch {
+          await runGitCapture(root, ["rm", "--cached", "-r", "--", ...paths], { timeoutMs: 30_000 });
+        }
+        gitStatusCache = null;
+        gitInfoCache = null;
+        gitChangesCache = null;
+        reply({ id: msg.id, ok: true, result: { unstaged: true } });
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_unstage_failed" });
+      });
+      return;
+    }
+
+    if (msg.type === "fs:gitDiscard") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const info = await getGitRepoInfo(root);
+        if (!info.isRepo) throw new Error("not_a_git_repo");
+        const includeUntracked = Boolean(msg.includeUntracked);
+        const paths = Array.isArray(msg.paths) ? msg.paths.map((p) => normalizeGitRelPath(p)).filter(Boolean) : [];
+        if (paths.length === 0) {
+          reply({ id: msg.id, ok: true, result: { discarded: true } });
+          return;
+        }
+
+        const now = Date.now();
+        const cachedChanges = gitChangesCache && now - gitChangesCache.at <= 1200 ? gitChangesCache.changes : null;
+        const untrackedSet = new Set<string>();
+        if (cachedChanges) {
+          for (const p of cachedChanges.untracked) untrackedSet.add(p);
+        } else if (includeUntracked) {
+          try {
+            const statusRes = await runGitCapture(root, ["status", "--porcelain=v1", "-z", "--", ...paths], { timeoutMs: 7000, maxBytes: 500_000 });
+            const parsed = parseGitStatusPorcelainV1Z(statusRes.stdout, Math.max(200, paths.length * 20));
+            for (const ent of parsed) {
+              const rel = normalizeGitRelPath(ent.path);
+              if (!rel) continue;
+              if (`${ent.x}${ent.y}` === "??") untrackedSet.add(rel);
+            }
+          } catch {
+            // ignore
+          }
+        }
+        const deleteTargets = includeUntracked ? paths.filter((p) => untrackedSet.has(p)) : [];
+        const restoreTargets = paths.filter((p) => !untrackedSet.has(p));
+
+        if (deleteTargets.length > 0) {
+          await runGitCapture(root, ["clean", "-fd", "--", ...deleteTargets], { timeoutMs: 30_000 });
+        }
+        if (restoreTargets.length > 0) {
+          await runGitCapture(root, ["checkout", "--", ...restoreTargets], { timeoutMs: 30_000 });
+        }
+
+        gitStatusCache = null;
+        gitInfoCache = null;
+        gitChangesCache = null;
+        reply({ id: msg.id, ok: true, result: { discarded: true } });
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_discard_failed" });
+      });
+      return;
+    }
+
+    if (msg.type === "fs:gitCommit") {
+      void (async () => {
+        if (!root) throw new Error("not_initialized");
+        const info = await getGitRepoInfo(root);
+        if (!info.isRepo) throw new Error("not_a_git_repo");
+        const message = String(msg.message ?? "");
+        if (!message.trim()) throw new Error("message_required");
+
+        const tmpPath = path.join(tmpdir(), `xcoding-commit-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
+        fs.writeFileSync(tmpPath, message, "utf8");
+        try {
+          await runGitCapture(root, ["commit", ...(msg.amend ? ["--amend"] : []), "-F", tmpPath], { timeoutMs: 45_000 });
+          const hashRes = await runGitCapture(root, ["rev-parse", "HEAD"], { timeoutMs: 4000 });
+          gitStatusCache = null;
+          gitInfoCache = null;
+          gitChangesCache = null;
+          reply({ id: msg.id, ok: true, result: { commitHash: hashRes.stdout.trim() } });
+        } finally {
+          try {
+            fs.rmSync(tmpPath, { force: true });
+          } catch {
+            // ignore
+          }
+        }
+      })().catch((e) => {
+        const code = (e as any)?.code;
+        if (code === "ENOENT") reply({ id: msg.id, ok: false, error: "git_not_found" });
+        else reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "git_commit_failed" });
+      });
       return;
     }
 

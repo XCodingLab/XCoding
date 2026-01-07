@@ -274,11 +274,11 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
           <div className="flex h-full items-center justify-center text-[11px] text-[var(--vscode-descriptionForeground)]">{t("loadingEditor")}</div>
         ) : (
           <Editor
+            key={modelUri}
             height="100%"
             path={modelUri}
             language={language}
             theme={MONACO_THEME_NAME}
-            keepCurrentModel
             value={value ?? ""}
             onMount={(editor) => {
               editorRef.current = editor;

@@ -48,6 +48,60 @@ export function registerProjectIpc() {
     return { ok: true, entries: (res.result as any)?.entries ?? {} };
   });
 
+  ipcMain.handle("project:gitInfo", async (_event, { slot }: { slot: number }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitInfo" });
+    if (!res.ok) return res;
+    return { ok: true, ...(res.result as any) };
+  });
+
+  ipcMain.handle("project:gitChanges", async (_event, { slot, maxEntries }: { slot: number; maxEntries?: number }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitChanges", maxEntries });
+    if (!res.ok) return res;
+    return { ok: true, ...(res.result as any) };
+  });
+
+  ipcMain.handle("project:gitDiff", async (_event, { slot, path, mode }: { slot: number; path: string; mode: "working" | "staged" }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitDiff", path, mode });
+    if (!res.ok) return res;
+    return { ok: true, diff: String((res.result as any)?.diff ?? ""), truncated: Boolean((res.result as any)?.truncated) };
+  });
+
+  ipcMain.handle("project:gitFileDiff", async (_event, { slot, path, mode }: { slot: number; path: string; mode: "working" | "staged" }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitFileDiff", path, mode });
+    if (!res.ok) return res;
+    return {
+      ok: true,
+      original: String((res.result as any)?.original ?? ""),
+      modified: String((res.result as any)?.modified ?? ""),
+      truncated: Boolean((res.result as any)?.truncated),
+      isBinary: Boolean((res.result as any)?.isBinary)
+    };
+  });
+
+  ipcMain.handle("project:gitStage", async (_event, { slot, paths }: { slot: number; paths: string[] }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitStage", paths });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
+  ipcMain.handle("project:gitUnstage", async (_event, { slot, paths }: { slot: number; paths: string[] }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitUnstage", paths });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
+  ipcMain.handle("project:gitDiscard", async (_event, { slot, paths, includeUntracked }: { slot: number; paths: string[]; includeUntracked?: boolean }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitDiscard", paths, includeUntracked });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
+  ipcMain.handle("project:gitCommit", async (_event, { slot, message, amend }: { slot: number; message: string; amend?: boolean }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitCommit", message, amend });
+    if (!res.ok) return res;
+    return { ok: true, commitHash: String((res.result as any)?.commitHash ?? "") };
+  });
+
   ipcMain.handle(
     "project:searchFiles",
     async (_event, { slot, query, maxResults, useGitignore }: { slot: number; query: string; maxResults?: number; useGitignore?: boolean }) => {
@@ -249,4 +303,3 @@ export function registerProjectIpc() {
     }
   });
 }
-
