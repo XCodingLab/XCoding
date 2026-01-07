@@ -87,6 +87,8 @@ export const enUS = {
   codexNotReady: "Codex is not ready.",
   codexCheckAppServer: "Make sure `codex app-server` can start and responds to `initialize` in your terminal.",
   statusLabel: "Status:",
+  projectStatusRunning: "Running",
+  projectStatusIdle: "Idle",
   reasonLabel: "Reason:",
   codexEnvHint:
     "If the terminal works but the IDE doesn't, a common cause is missing environment variables when launching from a GUI (especially tokens/headers for MCP HTTP servers). ",

@@ -86,6 +86,8 @@ export const zhCN = {
   codexNotReady: "Codex 未就绪。",
   codexCheckAppServer: "请先确认终端里 `codex app-server` 能启动并响应 `initialize`。",
   statusLabel: "状态：",
+  projectStatusRunning: "进行中",
+  projectStatusIdle: "空闲",
   reasonLabel: "原因：",
   codexEnvHint: "若终端可用但 IDE 不可用，常见原因是 GUI 启动时缺少环境变量（尤其是 MCP HTTP 服务器需要的 Token/Headers）。",
   codexMcpDisableHint: "你也可以在 `~/.codex/config.toml` 里给问题 MCP server 加 `enabled = false` 来验证是否由某个 MCP 触发崩溃。",

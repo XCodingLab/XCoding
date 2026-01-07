@@ -243,17 +243,19 @@ export default function TitleBar({
 
   return (
     <div
-      className="flex h-12 items-center justify-between bg-[var(--vscode-titleBar-activeBackground)] backdrop-blur-sm px-4 text-xs text-[var(--vscode-titleBar-activeForeground)] transition-colors duration-300"
+      className="flex h-14 items-stretch justify-between bg-[var(--vscode-titleBar-activeBackground)] backdrop-blur-sm px-4 text-xs text-[var(--vscode-titleBar-activeForeground)] transition-colors duration-300"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div className="flex min-w-0 items-center gap-3" />
 
-      <div className="flex h-full min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden px-2 no-scrollbar">
+      <div className="flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden px-2 pb-1 no-scrollbar">
         {props.activeProjectSlot && props.projectSlots ? (
           <div className="flex h-full items-center gap-1">
             {props.projectSlots.map((item) => {
               const isActive = item.slot === props.activeProjectSlot;
               const name = item.project?.name ?? `Project #${item.slot}`;
+              const status: "running" | "idle" = item.aiStatus === "running" ? "running" : "idle";
+              const statusLabel = status === "running" ? t("projectStatusRunning") : t("projectStatusIdle");
               return (
                 <button
                   key={item.slot}
@@ -261,27 +263,37 @@ export default function TitleBar({
                   onClick={() => props.onSelectProjectSlot?.(item.slot)}
                   title={item.project?.path ?? ""}
                   className={[
-                    "group relative flex h-[34px] min-w-[120px] max-w-[200px] items-center gap-2 rounded-t-lg border-x border-t px-3 text-xs transition-colors",
+                    "group relative flex h-[44px] min-w-[120px] max-w-[200px] flex-col justify-center gap-1 rounded-t-lg border-x border-t px-3 py-1 text-xs transition-colors",
                     isActive
                       ? "z-10 bg-[var(--vscode-editor-background)] text-[var(--vscode-tab-activeForeground)] border-[var(--vscode-tab-border)]"
                       : "bg-[var(--vscode-tab-inactiveBackground)] text-[var(--vscode-tab-inactiveForeground)] border-transparent hover:bg-[var(--vscode-tab-hoverBackground)]"
                   ].join(" ")}
                   style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
                 >
-                  <Folder className={[
-                    "h-3.5 w-3.5 shrink-0",
-                    isActive ? "text-[var(--vscode-foreground)]" : "text-[var(--vscode-descriptionForeground)]"
-                  ].join(" ")} />
-                  <span className="truncate">{name}</span>
-                  {item.aiStatus === "running" && (
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 flex h-2 w-2 rounded-full bg-blue-500 ring-2 ring-[var(--vscode-editor-background)]" />
-                  )}
+                  <div className="flex w-full min-w-0 items-center gap-2">
+                    <Folder
+                      className={[
+                        "h-3.5 w-3.5 shrink-0",
+                        isActive ? "text-[var(--vscode-foreground)]" : "text-[var(--vscode-descriptionForeground)]"
+                      ].join(" ")}
+                    />
+                    <span className="truncate">{name}</span>
+                  </div>
+                  <div
+                    className={[
+                      "flex w-full items-center gap-1 rounded px-2 py-0.5 text-[10px]",
+                      status === "running" ? "bg-emerald-500/15 text-emerald-200" : "bg-white/5 text-[var(--vscode-descriptionForeground)]"
+                    ].join(" ")}
+                  >
+                    <span className={["h-1.5 w-1.5 rounded-full", status === "running" ? "bg-emerald-400" : "bg-white/30"].join(" ")} />
+                    <span className="truncate">{statusLabel}</span>
+                  </div>
                 </button>
               );
             })}
             {props.onOpenProjectPicker && (
               <button
-                className="flex h-[28px] w-[28px] items-center justify-center rounded text-[var(--vscode-activityBar-foreground)] opacity-60 hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:opacity-100"
+                className="flex h-[32px] w-[32px] items-center justify-center rounded text-[var(--vscode-activityBar-foreground)] opacity-60 hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:opacity-100"
                 onClick={props.onOpenProjectPicker}
                 title={t("projectPickerTitle")}
                 style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}

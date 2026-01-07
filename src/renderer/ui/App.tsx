@@ -1488,14 +1488,14 @@ export default function App() {
             language={language}
             onSetLanguage={(next) => void setLanguageAndPersist(next)}
 
-            // Project Switcher
-            activeProjectSlot={activeProjectSlot}
-            projectSlots={visualOrderedProjectSlots}
-            onSelectProjectSlot={(slot) => {
-              setActiveProjectSlot(slot);
-              void window.xcoding.projects.setActiveSlot(slot);
-            }}
-            onOpenProjectPicker={() => setIsProjectPickerOpen(true)}
+	            // Project Switcher
+	            activeProjectSlot={activeProjectSlot}
+	            projectSlots={visualOrderedProjectSlots.map((s) => ({ ...s, aiStatus: aiBySlot[s.slot] }))}
+	            onSelectProjectSlot={(slot) => {
+	              setActiveProjectSlot(slot);
+	              void window.xcoding.projects.setActiveSlot(slot);
+	            }}
+	            onOpenProjectPicker={() => setIsProjectPickerOpen(true)}
           />
 
           <IdeSettingsModal
