@@ -208,22 +208,7 @@ export default function TitleBar({
       className="flex h-12 items-center justify-between bg-[var(--vscode-titleBar-activeBackground)] backdrop-blur-sm px-4 text-xs text-[var(--vscode-titleBar-activeForeground)] transition-colors duration-300"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
-      <div className="flex min-w-0 items-center gap-3">
-        {/* Modern App Logo & Title */}
-        <div className="flex items-center gap-2 select-none opacity-90 hover:opacity-100 transition-opacity">
-           <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-purple-500/20 text-white">
-             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-             </svg>
-           </div>
-	           {!isMac && (
-	             <div className="flex items-baseline gap-2">
-	               <span className="font-bold tracking-tight text-sm text-[var(--vscode-titleBar-activeForeground)] font-mono">{effectiveTitle}</span>
-	               <span className="rounded bg-[var(--vscode-toolbar-hoverBackground)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--vscode-descriptionForeground)]">BETA</span>
-	             </div>
-	           )}
-	        </div>
-      </div>
+      <div className="flex min-w-0 items-center gap-3" />
 
       <div className="flex min-w-0 flex-1 items-center justify-center px-4">
         {centerTitle && (
