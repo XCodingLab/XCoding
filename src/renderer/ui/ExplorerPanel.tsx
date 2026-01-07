@@ -480,49 +480,49 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
             >
               <div className="min-h-0 overflow-auto rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]">
                 {search.loading ? <div className="px-3 py-2 text-sm text-[var(--vscode-descriptionForeground)]">{t("searching")}</div> : null}
-                {search.error ? <div className="px-3 py-2 text-sm text-red-400">{search.error}</div> : null}
+                {search.error ? <div className="px-3 py-2 text-sm text-[var(--color-token-error-foreground)]">{search.error}</div> : null}
 
                 {search.mode === "files"
                   ? search.fileResults.map((r, idx) => (
-                      <button
-                        key={r.relativePath}
-                        className={[
-                          "block w-full truncate px-3 py-1 text-left text-sm",
-                          idx === search.selectedIndex
-                            ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
-                            : "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
-                        ].join(" ")}
-                        onClick={() => setSearch((s) => ({ ...s, selectedIndex: idx }))}
-                        onDoubleClick={() => onOpenFile(r.relativePath)}
-                        type="button"
-                        title={r.relativePath}
-                      >
-                        {r.relativePath}
-                      </button>
-                    ))
+                    <button
+                      key={r.relativePath}
+                      className={[
+                        "block w-full truncate px-3 py-1.5 text-left text-sm",
+                        idx === search.selectedIndex
+                          ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
+                          : "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
+                      ].join(" ")}
+                      onClick={() => setSearch((s) => ({ ...s, selectedIndex: idx }))}
+                      onDoubleClick={() => onOpenFile(r.relativePath)}
+                      type="button"
+                      title={r.relativePath}
+                    >
+                      {r.relativePath}
+                    </button>
+                  ))
                   : (search.contentResults?.matches ?? []).map((m, idx) => (
-                      <button
-                        key={`${m.relativePath}:${m.line}:${m.column}:${idx}`}
-                        className={[
-                          "block w-full px-3 py-1 text-left text-sm",
-                          idx === search.selectedIndex
-                            ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
-                            : "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
-                        ].join(" ")}
-                        onClick={() => setSearch((s) => ({ ...s, selectedIndex: idx }))}
-                        onDoubleClick={() => onOpenFile(m.relativePath, m.line, m.column)}
-                        type="button"
-                        title={`${m.relativePath}:${m.line}:${m.column}`}
-                      >
-                        <div className="truncate">
-                          <span className="text-[var(--vscode-descriptionForeground)]">{m.relativePath}</span>{" "}
-                          <span className="text-[var(--vscode-descriptionForeground)]">
-                            {m.line}:{m.column}
-                          </span>{" "}
-                          <span className="truncate">{m.content}</span>
-                        </div>
-                      </button>
-                    ))}
+                    <button
+                      key={`${m.relativePath}:${m.line}:${m.column}:${idx}`}
+                      className={[
+                        "block w-full px-3 py-1.5 text-left text-sm",
+                        idx === search.selectedIndex
+                          ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
+                          : "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
+                      ].join(" ")}
+                      onClick={() => setSearch((s) => ({ ...s, selectedIndex: idx }))}
+                      onDoubleClick={() => onOpenFile(m.relativePath, m.line, m.column)}
+                      type="button"
+                      title={`${m.relativePath}:${m.line}:${m.column}`}
+                    >
+                      <div className="truncate">
+                        <span className="text-[var(--vscode-descriptionForeground)]">{m.relativePath}</span>{" "}
+                        <span className="text-[var(--vscode-descriptionForeground)]">
+                          {m.line}:{m.column}
+                        </span>{" "}
+                        <span className="truncate">{m.content}</span>
+                      </div>
+                    </button>
+                  ))}
               </div>
 
               <div

@@ -389,7 +389,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
               <div
                 key={row.key}
                 className={[
-                  "px-2 py-1 text-[11px]",
+                  "px-2 py-1.5 text-[11px]",
                   row.tone === "error" ? "text-red-400" : "text-[var(--vscode-descriptionForeground)]"
                 ].join(" ")}
                 style={{ paddingLeft: `${row.depth * 12 + 12}px` }}
@@ -402,7 +402,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
           if (row.type === "inline") {
             const inlineValue = inlineEdit.mode === row.mode ? inlineEdit.value : "";
             return (
-              <div key={row.key} className="px-2 py-0.5" style={{ paddingLeft: `${row.depth * 12 + 12}px` }}>
+              <div key={row.key} className="px-2 py-1" style={{ paddingLeft: `${row.depth * 12 + 12}px` }}>
                 <input
                   ref={inlineInputRef}
                   className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
@@ -436,7 +436,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
             <button
               key={rel}
               className={[
-                "flex w-full items-center gap-1 truncate rounded px-2 py-0.5 text-left text-[12px]",
+                "flex w-full items-center gap-2 truncate rounded px-2 py-1 text-left text-[12px]",
                 isSelected
                   ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
                   : "hover:bg-[var(--vscode-list-hoverBackground)]"
@@ -548,29 +548,29 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
           {menu.target ? (
             <>
               <div className="my-1 border-t border-[var(--vscode-panel-border)]" />
-          <button
-            className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-            onClick={async () => {
-              const rel = menu.target!.rel;
-              const abs = rootPath ? `${rootPath.replace(/\/+$/, "")}/${rel}` : rel;
-              closeMenu();
-              await window.xcoding.os.copyText(abs);
-            }}
-            type="button"
-          >
-            {t("copyPath")}
-          </button>
-          <button
-            className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-            onClick={async () => {
-              const rel = menu.target!.rel;
-              closeMenu();
-              await window.xcoding.os.copyText(rel);
-            }}
-            type="button"
-          >
-            {t("copyRelativePath")}
-          </button>
+              <button
+                className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                onClick={async () => {
+                  const rel = menu.target!.rel;
+                  const abs = rootPath ? `${rootPath.replace(/\/+$/, "")}/${rel}` : rel;
+                  closeMenu();
+                  await window.xcoding.os.copyText(abs);
+                }}
+                type="button"
+              >
+                {t("copyPath")}
+              </button>
+              <button
+                className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                onClick={async () => {
+                  const rel = menu.target!.rel;
+                  closeMenu();
+                  await window.xcoding.os.copyText(rel);
+                }}
+                type="button"
+              >
+                {t("copyRelativePath")}
+              </button>
             </>
           ) : null}
           {menu.target ? (

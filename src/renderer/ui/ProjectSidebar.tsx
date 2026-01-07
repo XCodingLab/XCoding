@@ -28,7 +28,7 @@ type Props = {
 
 export default function ProjectSidebar(props: Props) {
   return (
-    <aside className="flex w-[176px] shrink-0 flex-col bg-transparent">
+    <aside className="flex w-64 shrink-0 flex-col bg-transparent">
       <div className="flex h-10 items-center justify-between px-3">
         <div className="text-[11px] font-semibold tracking-wide text-[var(--vscode-activityBar-foreground)] opacity-60">{props.t("switcher")}</div>
       </div>
@@ -56,7 +56,7 @@ export default function ProjectSidebar(props: Props) {
                 props.projectRowRefs.current[slot] = el;
               }}
               className={[
-                "group relative mb-2 flex items-center rounded-lg px-2 py-3 transition-colors",
+                "group relative mb-2 flex items-center rounded-lg px-3 py-3 transition-colors",
                 isActive ? "bg-[var(--vscode-list-activeSelectionBackground)] shadow-sm" : "hover:bg-[var(--vscode-list-hoverBackground)]"
               ].join(" ")}
               draggable={!props.isSingleProjectWindow}
@@ -92,7 +92,7 @@ export default function ProjectSidebar(props: Props) {
                 type="button"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 truncate text-[12px] font-medium text-[var(--vscode-activityBar-foreground)]">{title}</div>
+                  <div className="min-w-0 truncate text-[13px] font-medium text-[var(--vscode-activityBar-foreground)]">{title}</div>
                   <div className="shrink-0 rounded bg-black/20 px-1.5 py-0.5 text-[10px] text-[var(--vscode-descriptionForeground)]">{hotkeyLabel}</div>
                 </div>
                 <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-[var(--vscode-descriptionForeground)]">

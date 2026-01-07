@@ -1,4 +1,4 @@
-import { Bot, Brain, Check, ChevronDown, Cpu, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, ShieldAlert, Square } from "lucide-react";
+import { ArrowUp, Bot, Brain, Check, ChevronDown, Cpu, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, ShieldAlert, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { CodexMode, ComposerAttachment, ReasoningEffort } from "./types";
@@ -758,13 +758,13 @@ export default function Composer({
           </div>
 
           <button
-            className="rounded-full bg-[var(--vscode-button-background)] p-2 text-[var(--vscode-button-foreground)] hover:bg-[var(--vscode-button-hoverBackground)] disabled:opacity-50"
+            className="shrink-0 rounded-full bg-[var(--vscode-button-background)] p-2 text-[var(--vscode-button-foreground)] hover:bg-[var(--vscode-button-hoverBackground)] disabled:opacity-50"
             disabled={!projectRootPath || !ready || (!isTurnInProgress && (!input.trim() || isBusy))}
             onClick={isTurnInProgress ? onStop : onSend}
             type="button"
             title={isTurnInProgress ? "Stop" : "Send"}
           >
-            {isTurnInProgress ? <Square className="h-4 w-4" /> : "↑"}
+            {isTurnInProgress ? <Square className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
 

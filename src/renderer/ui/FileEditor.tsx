@@ -250,7 +250,7 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
           {path} {dirty ? <span className="text-amber-400">*</span> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {error ? <div className="max-w-[220px] truncate text-[11px] text-red-400">{error}</div> : null}
+          {error ? <div className="max-w-[220px] truncate text-[11px] text-[var(--color-token-error-foreground)]">{error}</div> : null}
           <button
             className="flex items-center gap-1 rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-0.5 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)] disabled:opacity-50"
             disabled={!dirty}
@@ -299,41 +299,41 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
                   })
                 );
               }
-            const emitSelection = () => {
-              const model = editor.getModel();
-              if (!model) return;
-              const selection = editor.getSelection();
-              const selections = editor.getSelections() ?? [];
+              const emitSelection = () => {
+                const model = editor.getModel();
+                if (!model) return;
+                const selection = editor.getSelection();
+                const selections = editor.getSelections() ?? [];
 
-              const activeSelectionContent = selection ? model.getValueInRange(selection) : "";
-              const toPos = (lineNumber: number, column: number) => ({ line: Math.max(0, lineNumber - 1), character: Math.max(0, column - 1) });
-              const primary =
-                selection
-                  ? { start: toPos(selection.startLineNumber, selection.startColumn), end: toPos(selection.endLineNumber, selection.endColumn) }
-                  : null;
-              const allSelections = selections.map((s) => ({
-                start: toPos(s.startLineNumber, s.startColumn),
-                end: toPos(s.endLineNumber, s.endColumn)
-              }));
+                const activeSelectionContent = selection ? model.getValueInRange(selection) : "";
+                const toPos = (lineNumber: number, column: number) => ({ line: Math.max(0, lineNumber - 1), character: Math.max(0, column - 1) });
+                const primary =
+                  selection
+                    ? { start: toPos(selection.startLineNumber, selection.startColumn), end: toPos(selection.endLineNumber, selection.endColumn) }
+                    : null;
+                const allSelections = selections.map((s) => ({
+                  start: toPos(s.startLineNumber, s.startColumn),
+                  end: toPos(s.endLineNumber, s.endColumn)
+                }));
 
-              window.dispatchEvent(
-                new CustomEvent("xcoding:fileSelectionChanged", {
-                  detail: {
-                    slot,
-                    path,
-                    selection: primary,
-                    selections: allSelections,
-                    activeSelectionContent
-                  }
-                })
-              );
-            };
+                window.dispatchEvent(
+                  new CustomEvent("xcoding:fileSelectionChanged", {
+                    detail: {
+                      slot,
+                      path,
+                      selection: primary,
+                      selections: allSelections,
+                      activeSelectionContent
+                    }
+                  })
+                );
+              };
 
-            selectionDisposableRef.current = editor.onDidChangeCursorSelection(() => emitSelection());
-            emitSelection();
+              selectionDisposableRef.current = editor.onDidChangeCursorSelection(() => emitSelection());
+              emitSelection();
 
-          }}
-          loading={<div className="p-2 text-[11px] text-[var(--vscode-descriptionForeground)]">{t("loadingEditor")}</div>}
+            }}
+            loading={<div className="p-2 text-[11px] text-[var(--vscode-descriptionForeground)]">{t("loadingEditor")}</div>}
             onChange={(next) => {
               if (next === undefined) return; // ignore dispose events so we don't wipe the buffer
               valueRef.current = next;

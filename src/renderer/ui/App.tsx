@@ -1,5 +1,6 @@
 import { type DragEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ExplorerPanel from "./ExplorerPanel";
+import ActivityBar from "./ActivityBar";
 import AutoWorkspace from "./AutoWorkspace";
 import { I18nContext, type Language, messages } from "./i18n";
 import { UiThemeContext, type UiTheme } from "./UiThemeContext";
@@ -142,7 +143,7 @@ export default function App() {
   const projectReorderStartOrderRef = useRef<number[] | null>(null);
   const projectReorderDidChangeRef = useRef<boolean>(false);
   const projectRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const projectRowPrevRectsRef = useRef<Record<number, DOMRect>>({});
+
 
   useEffect(() => {
     slotUiRef.current = slotUi;
@@ -412,33 +413,7 @@ export default function App() {
     }
   }, [activeProjectSlot, detachedSlots, isSingleProjectWindow, visibleProjectSlotsForWindow]);
 
-  useLayoutEffect(() => {
-    const prevRects = projectRowPrevRectsRef.current;
-    const nextRects: Record<number, DOMRect> = {};
-    for (const { slot } of baseProjectSlots) {
-      const el = projectRowRefs.current[slot];
-      if (!el) continue;
-      nextRects[slot] = el.getBoundingClientRect();
-    }
 
-    for (const { slot } of baseProjectSlots) {
-      const el = projectRowRefs.current[slot];
-      const prev = prevRects[slot];
-      const next = nextRects[slot];
-      if (!el || !prev || !next) continue;
-      const dx = prev.left - next.left;
-      const dy = prev.top - next.top;
-      if (!dx && !dy) continue;
-      el.style.transform = `translate(${dx}px, ${dy}px)`;
-      el.style.transition = "transform 0s";
-      requestAnimationFrame(() => {
-        el.style.transform = "translate(0px, 0px)";
-        el.style.transition = "transform 160ms ease";
-      });
-    }
-
-    projectRowPrevRectsRef.current = nextRects;
-  }, [baseProjectSlots.map((e) => e.slot).join(","), visualSlotOrder.join(",")]);
 
   function updateSlot(slot: number, updater: (prev: SlotUiState) => SlotUiState) {
     setSlotUi((prev) => ({ ...prev, [slot]: updater(prev[slot] ?? makeEmptySlotUiState()) }));
@@ -1506,19 +1481,21 @@ export default function App() {
           style={{ backgroundImage: "var(--aurora-bg)" }}
         >
           <TitleBar
-            isExplorerVisible={effectiveLayout.isExplorerVisible}
-            isChatVisible={effectiveLayout.isChatVisible}
-            isTerminalVisible={Boolean(activeUi.terminalPanel?.isVisible && (activeUi.terminalPanel?.terminals?.length ?? 0) > 0)}
-            onToggleExplorer={() => setLayoutAndPersist((p) => ({ ...p, isExplorerVisible: !p.isExplorerVisible }))}
-            onToggleChat={() => setLayoutAndPersist((p) => ({ ...p, isChatVisible: !p.isChatVisible }))}
-            onToggleTerminal={() => toggleOrCreateTerminalPanel()}
-            onOpenSettings={() => setIsIdeSettingsOpen(true)}
             centerTitle={activeProject?.name ?? ""}
             viewMode={activeViewMode ?? undefined}
             onViewModeChange={activeProjectId && activeViewMode ? ((mode) => void setProjectViewMode(mode)) : undefined}
-            showExplorerToggle={!isWorkflowPreview}
+            showExplorerToggle={false} // Hidden in TitleBar now
             language={language}
             onSetLanguage={(next) => void setLanguageAndPersist(next)}
+
+            // Project Switcher
+            activeProjectSlot={activeProjectSlot}
+            projectSlots={visualOrderedProjectSlots}
+            onSelectProjectSlot={(slot) => {
+              setActiveProjectSlot(slot);
+              void window.xcoding.projects.setActiveSlot(slot);
+            }}
+            onOpenProjectPicker={() => setIsProjectPickerOpen(true)}
           />
 
           <IdeSettingsModal
@@ -1535,6 +1512,18 @@ export default function App() {
           />
 
           <div className="flex min-h-0 w-full flex-1 overflow-hidden">
+            {activeProjectId && (activeWorkflowStage === "idea" || activeWorkflowStage === "auto") ? null : (
+              <ActivityBar
+                isExplorerVisible={effectiveLayout.isExplorerVisible}
+                isChatVisible={effectiveLayout.isChatVisible}
+                isTerminalVisible={Boolean(activeUi.terminalPanel?.isVisible && (activeUi.terminalPanel?.terminals?.length ?? 0) > 0)}
+                onToggleExplorer={() => setLayoutAndPersist((p) => ({ ...p, isExplorerVisible: !p.isExplorerVisible }))}
+                onToggleChat={() => setLayoutAndPersist((p) => ({ ...p, isChatVisible: !p.isChatVisible }))}
+                onToggleTerminal={() => toggleOrCreateTerminalPanel()}
+                onOpenSettings={() => setIsIdeSettingsOpen(true)}
+              />
+            )}
+
             {/* Idea/Auto stages: minimal workspace (doc/chat) */}
             {activeProjectId && (activeWorkflowStage === "idea" || activeWorkflowStage === "auto") ? (
               <div className="flex min-h-0 flex-1 bg-editor-bg">
@@ -1586,45 +1575,6 @@ export default function App() {
               </div>
             ) : (
               <>
-                <div className="flex min-w-0 shrink-0 flex-col bg-glass-bg backdrop-blur-lg border-r border-glass-border">
-                  <ProjectSidebar
-                    t={t}
-                    isSingleProjectWindow={isSingleProjectWindow}
-                    visualOrderedProjectSlots={visualOrderedProjectSlots}
-                    visibleProjectSlotsForWindow={visibleProjectSlotsForWindow}
-                    projectIndexBySlot={projectIndexBySlot}
-                    projectRowRefs={projectRowRefs}
-                    aiBySlot={aiBySlot}
-                    activeProjectSlot={activeProjectSlot}
-                    setActiveProjectSlot={(slot) => {
-                      setActiveProjectSlot(slot);
-                      void window.xcoding.projects.setActiveSlot(slot);
-                    }}
-                    onProjectContextMenuOpenNewWindow={(slot) => {
-                      void window.xcoding.window.create({ slot, mode: "single" });
-                      setDetachedSlots((prev) => {
-                        const next = new Set(prev);
-                        next.add(slot);
-                        return next;
-                      });
-                      if (slot === activeProjectSlot) {
-                        const remaining = visibleProjectSlotsForWindow.filter((x) => x.slot !== slot).map((x) => x.slot);
-                        const nextActive = remaining[0];
-                        if (typeof nextActive === "number") {
-                          setActiveProjectSlot(nextActive);
-                          void window.xcoding.projects.setActiveSlot(nextActive);
-                        }
-                      }
-                    }}
-                    onCloseProjectSlot={(slot) => void closeProjectSlot(slot)}
-                    onOpenProjectPicker={() => setIsProjectPickerOpen(true)}
-                    onDragStartProject={onDragStartProject}
-                    onDragEndProject={onDragEndProject}
-                    onDragOverProject={onDragOverProject}
-                    onDropProject={onDropProject}
-                  />
-                </div>
-
                 {effectiveLayout.isExplorerVisible ? (
                   <div className="flex min-w-0 shrink-0 flex-col bg-glass-bg backdrop-blur-lg border-r border-glass-border">
                     <ExplorerPanel
