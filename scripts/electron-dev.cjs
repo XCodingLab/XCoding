@@ -23,6 +23,12 @@ function buildChildEnv() {
 const electronBinary = require("electron");
 const args = process.argv.slice(2);
 
+// [Linux] Auto-disable sandbox in dev mode on Linux to avoid SUID permission issues
+// (common in development environments where chowning chrome-sandbox is annoying).
+if (process.platform === "linux" && !args.includes("--no-sandbox")) {
+  args.push("--no-sandbox");
+}
+
 const child = spawn(electronBinary, args.length ? args : ["."], {
   stdio: "inherit",
   env: buildChildEnv()
