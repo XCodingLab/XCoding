@@ -334,11 +334,13 @@ declare global {
         get: () => Promise<{
           ui: {
             language: "en-US" | "zh-CN";
+            theme: "dark" | "light";
             layout?: { explorerWidth: number; chatWidth: number; isExplorerVisible: boolean; isChatVisible: boolean };
           };
           ai: { autoApplyAll: boolean; apiBase: string; apiKey: string; model: string };
         }>;
         setLanguage: (language: "en-US" | "zh-CN") => Promise<{ ok: boolean }>;
+        setTheme: (theme: "dark" | "light") => Promise<{ ok: boolean }>;
         setAutoApply: (enabled: boolean) => Promise<{ ok: boolean }>;
         setAiConfig: (payload: { apiBase: string; apiKey: string; model: string }) => Promise<{ ok: boolean }>;
         setLayout: (payload: { explorerWidth: number; chatWidth: number; isExplorerVisible: boolean; isChatVisible: boolean }) => Promise<{ ok: boolean }>;

@@ -93,7 +93,7 @@ export default function ProjectWorkspaceMain(props: Props) {
   }, [activeUi, workflowStage]);
 
   return (
-    <main className="min-w-0 flex-1 bg-[var(--vscode-editor-background)]">
+    <main className="flex min-w-0 flex-1 flex-col bg-transparent">
       {!isActiveSlotBound ? (
         <WelcomeView
           recentProjects={recentProjects}
@@ -102,7 +102,7 @@ export default function ProjectWorkspaceMain(props: Props) {
         />
       ) : (
         <div className="flex h-full min-h-0 flex-col">
-          <div className="min-h-0 flex-1 p-3">
+          <div className="min-h-0 flex-1">
             <LayoutManager
               mode={visibleUi.layoutMode}
               split={visibleUi.layoutSplit}

@@ -203,21 +203,19 @@ export default function LayoutManager<TTab extends { id: string }>({
   function renderPaneCell(pane: PaneId) {
     const p = panes[pane];
     const effectiveActiveTabId = p.tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId : p.tabs[0]?.id ?? "";
-    const highlight = dragOverPane === pane ? "ring-2 ring-amber-500" : "";
+    const highlight = dragOverPane === pane ? "ring-1 ring-brand-primary z-10" : "";
     const hasTabs = p.tabs.length > 0;
     return (
       <div
         key={pane}
         className={[
-          "relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]",
-                  // Avoid VS Code-like blue focus ring around panes (too visually loud for this IDE).
-                  "",
+          "relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-transparent",
           highlight
         ].join(" ")}
         onMouseDown={() => setActivePane(pane)}
       >
         {hasTabs ? (
-          <div className="flex h-9 items-center gap-1 border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-tab-inactiveBackground)] px-2">
+          <div className="flex h-10 items-center gap-1 bg-glass-highlight px-2 backdrop-blur-md">
             {p.tabs.map((tab) => {
               const isActive = tab.id === effectiveActiveTabId;
               return (
@@ -227,10 +225,10 @@ export default function LayoutManager<TTab extends { id: string }>({
                   onDragStart={(e) => onDragStartTab(e, pane, tab.id)}
                   onDragEnd={onDragEndTab}
                   className={[
-                    "group flex max-w-[240px] items-center gap-1 rounded px-2 py-1",
+                    "group flex max-w-[200px] items-center gap-2 rounded-t-md px-3 py-1.5 cursor-pointer transition-all relative top-[1px]",
                     isActive
-                      ? "bg-[var(--vscode-tab-activeBackground)] text-[var(--vscode-tab-activeForeground)]"
-                      : "text-[var(--vscode-tab-inactiveForeground)] hover:bg-[var(--vscode-list-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                      ? "bg-glass-highlight text-glass-text font-medium shadow-[0_-1px_0_0_rgba(255,255,255,0.1)_inset]"
+                      : "text-glass-text-dim hover:bg-glass-highlight hover:text-glass-text"
                   ].join(" ")}
                 >
                   <button className="min-w-0 flex-1 truncate text-left text-xs" onClick={() => onActivateTab(pane, tab.id)} type="button">
@@ -266,7 +264,7 @@ export default function LayoutManager<TTab extends { id: string }>({
               );
             })
           ) : (
-            <div className="flex h-full items-center justify-center rounded border border-dashed border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] p-6 text-sm text-[var(--vscode-descriptionForeground)]">
+            <div className="flex h-full items-center justify-center bg-transparent p-6 text-sm text-glass-text-dim">
               {renderEmpty ? renderEmpty(pane) : "Drop a tab or open a file to start."}
             </div>
           )}
@@ -278,7 +276,7 @@ export default function LayoutManager<TTab extends { id: string }>({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={containerRef} className="relative min-h-0 flex-1" onDragOver={onDragOverContainer} onDragLeave={onDragLeave} onDrop={onDropContainer}>
-        <div className="grid h-full min-h-0 gap-2" style={{ gridTemplateColumns, gridTemplateRows }}>
+        <div className="grid h-full min-h-0 bg-transparent gap-px border-l border-glass-border" style={{ gridTemplateColumns, gridTemplateRows }}>
           {visiblePanes.map((p) => renderPaneCell(p))}
         </div>
 

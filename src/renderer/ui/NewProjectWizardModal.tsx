@@ -41,7 +41,7 @@ export default function NewProjectWizardModal({ isOpen, projects, onClose, onOpe
       aria-modal="true"
     >
       <div
-        className="w-full max-w-[980px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-2xl"
+        className="w-full max-w-[980px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[var(--vscode-panel-border)] px-5 py-4">

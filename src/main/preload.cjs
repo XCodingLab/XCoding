@@ -170,6 +170,7 @@ contextBridge.exposeInMainWorld("xcoding", {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     setLanguage: (language) => ipcRenderer.invoke("settings:setLanguage", { language }),
+    setTheme: (theme) => ipcRenderer.invoke("settings:setTheme", { theme }),
     setAutoApply: (enabled) => ipcRenderer.invoke("settings:setAutoApply", { enabled }),
     setAiConfig: (payload) => ipcRenderer.invoke("settings:setAiConfig", payload),
     setLayout: (payload) => ipcRenderer.invoke("settings:setLayout", payload)

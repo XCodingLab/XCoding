@@ -28,9 +28,9 @@ type Props = {
 
 export default function ProjectSidebar(props: Props) {
   return (
-    <aside className="flex w-[176px] shrink-0 flex-col border-r border-[var(--vscode-panel-border)] bg-[var(--vscode-activityBar-background)]">
-      <div className="flex h-10 items-center justify-between border-b border-[var(--vscode-panel-border)] px-2">
-        <div className="text-[11px] font-semibold tracking-wide text-[var(--vscode-activityBar-foreground)]">{props.t("switcher")}</div>
+    <aside className="flex w-[176px] shrink-0 flex-col bg-transparent">
+      <div className="flex h-10 items-center justify-between px-3">
+        <div className="text-[11px] font-semibold tracking-wide text-[var(--vscode-activityBar-foreground)] opacity-60">{props.t("switcher")}</div>
       </div>
 
       <div className="min-h-0 flex flex-1 flex-col overflow-auto p-2">
@@ -56,8 +56,8 @@ export default function ProjectSidebar(props: Props) {
                 props.projectRowRefs.current[slot] = el;
               }}
               className={[
-                "group relative mb-1 flex items-center rounded px-1 py-2",
-                isActive ? "bg-[var(--vscode-list-activeSelectionBackground)]" : "hover:bg-[var(--vscode-list-hoverBackground)]"
+                "group relative mb-2 flex items-center rounded-lg px-2 py-3 transition-colors",
+                isActive ? "bg-[var(--vscode-list-activeSelectionBackground)] shadow-sm" : "hover:bg-[var(--vscode-list-hoverBackground)]"
               ].join(" ")}
               draggable={!props.isSingleProjectWindow}
               onDragStart={(e) => {

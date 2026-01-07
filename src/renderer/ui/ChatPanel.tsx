@@ -186,7 +186,7 @@ export default function ChatPanel({
               className="rounded px-2 py-1 text-[11px] text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
               onClick={() => setShowSettings((v) => !v)}
               type="button"
-              title={t("settings")}
+              title={t("aiSettings")}
             >
               ⚙
             </button>

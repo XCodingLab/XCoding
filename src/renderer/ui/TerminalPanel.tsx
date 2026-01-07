@@ -67,10 +67,10 @@ function clamp(n: number, min: number, max: number) {
 
 function tabButtonClass(isActive: boolean) {
   return [
-    "rounded px-2 py-1 text-[11px]",
+    "rounded-full px-3 py-1 text-[11px] font-medium transition-all border border-transparent",
     isActive
-      ? "bg-[var(--vscode-tab-activeBackground)] text-[var(--vscode-tab-activeForeground)]"
-      : "text-[var(--vscode-tab-inactiveForeground)] hover:bg-[var(--vscode-list-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+      ? "bg-glass-highlight text-glass-text border-glass-highlight shadow-[0_0_10px_var(--glass-shadow)]"
+      : "text-glass-text-dim hover:bg-glass-highlight hover:text-glass-text"
   ].join(" ");
 }
 
@@ -519,17 +519,17 @@ export default function TerminalPanel({
   const activeNetwork: PreviewNetworkEntry[] = activeNetworkState.order.map((id) => activeNetworkState.byId[id]).filter(Boolean);
 
   return (
-    <div className="flex min-h-0 shrink-0 flex-col border-t border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]" style={{ height: state.height }}>
+    <div className="flex min-h-0 shrink-0 flex-col bg-glass-bg backdrop-blur-md border-t border-glass-border" style={{ height: state.height }}>
       <div
         ref={resizerRef}
-        className="h-1 w-full cursor-row-resize bg-transparent hover:bg-[var(--vscode-panel-border)]"
+        className="h-1 w-full cursor-row-resize bg-glass-highlight hover:bg-brand-primary/50 transition-colors"
         onMouseDown={startResize}
         role="separator"
         aria-orientation="horizontal"
       />
 
-      <div className="group flex h-9 items-center justify-between border-b border-[var(--vscode-panel-border)] px-2">
-        <div className="flex items-center gap-1">
+      <div className="group flex h-10 items-center justify-between px-3">
+        <div className="flex items-center gap-2">
           <button className={tabButtonClass(activeTab === "terminal")} onClick={() => setActiveTab("terminal")} type="button">
             {t("terminal")}
           </button>
@@ -704,9 +704,8 @@ export default function TerminalPanel({
                     <div
                       key={term.id}
                       className={[
-                        "relative min-h-0 overflow-hidden rounded border border-[var(--vscode-panel-border)]",
-                        // Avoid blue focus ring around the active terminal view.
-                        ""
+                        "relative min-h-0 overflow-hidden bg-glass-bg-heavy rounded-md border border-glass-border",
+                        isActiveView ? "ring-1 ring-brand-primary/50" : ""
                       ].join(" ")}
                       onMouseDown={() => setFocusedView(index)}
                     >
@@ -733,7 +732,7 @@ export default function TerminalPanel({
               </div>
             </div>
 
-            <div className="w-[180px] shrink-0 border-l border-[var(--vscode-panel-border)] p-1">
+            <div className="w-[180px] shrink-0 bg-transparent p-2 border-l border-glass-border">
               {state.terminals.map((t) => {
                 const isShown = state.viewIds.includes(t.id);
                 const isFocused = state.viewIds[state.focusedView] === t.id;
@@ -741,10 +740,10 @@ export default function TerminalPanel({
                   <div
                     key={t.id}
                     className={[
-                      "group flex items-center justify-between gap-2 rounded px-2 py-1 text-[11px]",
+                      "group flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all",
                       isFocused
-                        ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
-                        : "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
+                        ? "bg-glass-highlight text-glass-text font-medium shadow-sm"
+                        : "text-glass-text-dim hover:bg-glass-highlight hover:text-glass-text"
                     ].join(" ")}
                     title={t.title}
                     onClick={() => showTerminalInFocusedView(t.id)}

@@ -15,6 +15,12 @@ export function registerSettingsIpc({
     return { ok: true };
   });
 
+  ipcMain.handle("settings:setTheme", (_event, { theme }: { theme: AppSettings["ui"]["theme"] }) => {
+    settings.ui.theme = theme;
+    persistSettingsToDisk();
+    return { ok: true };
+  });
+
   ipcMain.handle("settings:setAiConfig", (_event, { apiBase, apiKey, model }: { apiBase: string; apiKey: string; model: string }) => {
     settings.ai.apiBase = apiBase;
     settings.ai.apiKey = apiKey;

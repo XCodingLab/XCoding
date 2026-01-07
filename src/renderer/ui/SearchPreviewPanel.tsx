@@ -1,8 +1,9 @@
 import { Editor, loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ensureMonacoLanguage, MONACO_THEME_NAME } from "../monacoSetup";
+import { ensureMonacoLanguage, getMonacoThemeName } from "../monacoSetup";
 import { languageFromPath } from "../languageSupport";
+import { useUiTheme } from "./UiThemeContext";
 
 loader.config({ monaco });
 
@@ -16,6 +17,7 @@ type Props = {
 };
 
 export default function SearchPreviewPanel({ slot, path, line, query, matchCase = false, regex = false }: Props) {
+  const { theme } = useUiTheme();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const [content, setContent] = useState<string | null>(null);
@@ -124,7 +126,7 @@ export default function SearchPreviewPanel({ slot, path, line, query, matchCase 
           path={modelUri}
           value={content}
           language={language}
-          theme={MONACO_THEME_NAME}
+          theme={getMonacoThemeName(theme)}
           onMount={(editor) => {
             editorRef.current = editor;
             applyHighlights(editor, true);
@@ -140,7 +142,9 @@ export default function SearchPreviewPanel({ slot, path, line, query, matchCase 
             overviewRulerLanes: 0,
             hideCursorInOverviewRuler: true,
             scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
+            fontFamily: '"FiraCode Nerd Font", ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, "Liberation Mono", monospace',
             fontSize: 12,
+            fontLigatures: true,
             wordWrap: "on",
             contextmenu: false,
             selectOnLineNumbers: false,

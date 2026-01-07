@@ -2,10 +2,11 @@ import { Editor, loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RotateCcw, Save, Eye } from "lucide-react";
-import { ensureMonacoLanguage, MONACO_THEME_NAME } from "../monacoSetup";
+import { ensureMonacoLanguage, getMonacoThemeName } from "../monacoSetup";
 import { classifyDiffLine, type DiffLineKind } from "../diffSupport";
 import { languageFromPath, shouldEnableLsp } from "../languageSupport";
 import { useI18n } from "./i18n";
+import { useUiTheme } from "./UiThemeContext";
 
 type Props = {
   slot: number;
@@ -19,6 +20,7 @@ loader.config({ monaco });
 
 export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExtras }: Props) {
   const { t } = useI18n();
+  const { theme } = useUiTheme();
   const [value, setValue] = useState<string | null>(null);
   const valueRef = useRef<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -278,7 +280,8 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
             height="100%"
             path={modelUri}
             language={language}
-            theme={MONACO_THEME_NAME}
+            theme={getMonacoThemeName(theme)}
+            keepCurrentModel
             value={value ?? ""}
             onMount={(editor) => {
               editorRef.current = editor;
@@ -350,7 +353,9 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
             }}
             options={{
               minimap: { enabled: false },
+              fontFamily: '"FiraCode Nerd Font", ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, "Liberation Mono", monospace',
               fontSize: 13,
+              fontLigatures: true,
               tabSize: 2,
               wordWrap: "on",
               scrollBeyondLastLine: false,

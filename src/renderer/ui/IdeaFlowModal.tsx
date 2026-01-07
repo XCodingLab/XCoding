@@ -41,7 +41,7 @@ export default function IdeaFlowModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6" onMouseDown={onClose} role="dialog" aria-modal="true">
       <div
-        className="flex h-[82vh] w-full max-w-[1200px] flex-col overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-2xl"
+        className="flex h-[82vh] w-full max-w-[1200px] flex-col overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[var(--vscode-panel-border)] px-4 py-3">

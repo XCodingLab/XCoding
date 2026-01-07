@@ -5,6 +5,7 @@ import path from "node:path";
 export type AppSettings = {
   ui: {
     language: "en-US" | "zh-CN";
+    theme: "dark" | "light";
     layout?: { explorerWidth: number; chatWidth: number; isExplorerVisible: boolean; isChatVisible: boolean };
   };
   ai: {
@@ -19,7 +20,7 @@ export type AppSettings = {
 export type UiLayout = NonNullable<AppSettings["ui"]["layout"]>;
 
 export const settings: AppSettings = {
-  ui: { language: "en-US", layout: { explorerWidth: 180, chatWidth: 530, isExplorerVisible: true, isChatVisible: true } },
+  ui: { language: "en-US", theme: "dark", layout: { explorerWidth: 180, chatWidth: 530, isExplorerVisible: true, isChatVisible: true } },
   ai: { autoApplyAll: true, apiBase: "https://api.openai.com", apiKey: "", model: "gpt-4o-mini", codex: { prewarm: true } }
 };
 
@@ -32,6 +33,7 @@ export function loadSettingsFromDisk() {
     const raw = fs.readFileSync(settingsPath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     if (parsed.ui?.language === "en-US" || parsed.ui?.language === "zh-CN") settings.ui.language = parsed.ui.language;
+    if (parsed.ui?.theme === "dark" || parsed.ui?.theme === "light") settings.ui.theme = parsed.ui.theme;
     let didMigrateLayout = false;
     if (parsed.ui?.layout) {
       const l = parsed.ui.layout as any;

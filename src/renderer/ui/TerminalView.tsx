@@ -9,6 +9,7 @@ import { CaseSensitive, ChevronDown, ChevronUp, Regex, WholeWord, X } from "luci
 import { useEffect, useMemo, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { useI18n } from "./i18n";
+import { useUiTheme } from "./UiThemeContext";
 
 // Matches: path/to/file.ts:42 or path/to/file.ts:42:10 or ./file.ts:10
 // Note: longer extensions must come before shorter ones (tsx before ts, jsx before js, etc.)
@@ -93,17 +94,21 @@ function getRendererPreference(): "auto" | "dom" | "canvas" | "webgl" {
 
 function readCssVar(name: string, fallback: string) {
   try {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const v = getComputedStyle(document.body).getPropertyValue(name).trim();
     return v || fallback;
   } catch {
     return fallback;
   }
 }
 
-function getTerminalTheme() {
-  const background = readCssVar("--vscode-terminal-background", "#1e1e1e") || "#1e1e1e";
-  const foreground = readCssVar("--vscode-terminal-foreground", "#cccccc") || "#cccccc";
-  const cursor = readCssVar("--vscode-terminalCursor-foreground", foreground) || foreground;
+function getTerminalTheme(theme: "dark" | "light") {
+  const isLight = theme === "light";
+  const defaultBg = isLight ? "#00000000" : "#1e1e1e"; // Transparent fallback for light, Dark for dark
+  const defaultFg = isLight ? "#020617" : "#cccccc"; // Slate 950 for light
+
+  const background = isLight ? "#00000000" : (readCssVar("--vscode-terminal-background", defaultBg) || defaultBg);
+  const foreground = readCssVar("--vscode-terminal-foreground", defaultFg) || defaultFg;
+  const cursor = readCssVar("--vscode-terminal-cursor", foreground) || foreground;
 
   return { background, foreground, cursor };
 }
@@ -123,6 +128,7 @@ export default function TerminalView({
   onOpenFile
 }: Props) {
   const { t } = useI18n();
+  const { theme } = useUiTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -178,6 +184,19 @@ export default function TerminalView({
   useEffect(() => {
     isPausedRef.current = isPaused;
   }, [isPaused]);
+
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+    try {
+      const nextTheme = getTerminalTheme(theme);
+      if ((term as any).setOption) (term as any).setOption("theme", nextTheme);
+      else term.options.theme = nextTheme;
+      if (term.rows > 0) term.refresh(0, term.rows - 1);
+    } catch {
+      // ignore
+    }
+  }, [theme]);
 
   function flushWriteBuffer() {
     if (!terminalRef.current) return;
@@ -322,14 +341,21 @@ export default function TerminalView({
         await new Promise<void>((r) => requestAnimationFrame(() => r()));
       }
 
+      try {
+        await document.fonts?.load?.('12px "FiraCode Nerd Font"');
+      } catch {
+        // ignore
+      }
+
       const term = new Terminal({
         cursorBlink: true,
         cursorStyle: "bar",
         scrollback,
         allowProposedApi: true,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+        allowTransparency: true,
+        fontFamily: '"FiraCode Nerd Font", ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, "Liberation Mono", monospace',
         fontSize: 12,
-        theme: getTerminalTheme()
+        theme: getTerminalTheme(theme)
       });
 
       const fitAddon = new FitAddon();

@@ -27,7 +27,7 @@ export default function ProjectPickerModal({ isOpen, projects, onClose, onPick, 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-6" onMouseDown={onClose} role="dialog" aria-modal="true">
       <div
-        className="w-full max-w-[720px] overflow-hidden rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow"
+        className="w-full max-w-[720px] overflow-hidden rounded border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[var(--vscode-panel-border)] px-3 py-2">
