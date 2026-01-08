@@ -282,11 +282,16 @@ export default function TitleBar({
                       "flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px]",
                       status === "running"
                         ? "bg-emerald-500/15 text-emerald-200"
-                        : "bg-white/5 text-[var(--vscode-descriptionForeground)]"
+                        : "bg-[var(--vscode-toolbar-hoverBackground)] text-[var(--vscode-descriptionForeground)]"
                     ].join(" ")}
                     title={statusLabel}
                   >
-                    <span className={["h-2 w-2 rounded-full", status === "running" ? "bg-emerald-400" : "bg-white/30"].join(" ")} />
+                    <span
+                      className={[
+                        "h-2 w-2 rounded-full",
+                        status === "running" ? "bg-emerald-400" : "bg-[var(--vscode-descriptionForeground)]"
+                      ].join(" ")}
+                    />
                     <span>{statusLabel}</span>
                   </span>
                 </button>
