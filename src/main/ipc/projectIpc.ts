@@ -192,6 +192,18 @@ export function registerProjectIpc() {
     return { ok: true, diagnostics: (res.result as any)?.diagnostics ?? [] };
   });
 
+  ipcMain.handle("project:watchFile", async (_event, { slot, path: relPath }: { slot: number; path: string }) => {
+    const res = await forwardToProjectService(slot, { type: "watcher:watchFile", relPath });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
+  ipcMain.handle("project:unwatchFile", async (_event, { slot, path: relPath }: { slot: number; path: string }) => {
+    const res = await forwardToProjectService(slot, { type: "watcher:unwatchFile", relPath });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
   ipcMain.handle(
     "project:lspDidOpen",
     async (
@@ -249,4 +261,3 @@ export function registerProjectIpc() {
     }
   });
 }
-

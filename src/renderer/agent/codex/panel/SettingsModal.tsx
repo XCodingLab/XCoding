@@ -96,8 +96,14 @@ export default function SettingsModal({ open, model, effort, configSnapshot, onC
   }, [open]);
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-[860px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-2xl">
+    <div
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[860px] overflow-hidden rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--modal-background)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between gap-2 border-b border-[var(--vscode-panel-border)] px-3 py-2">
           <div className="text-[12px] font-semibold text-[var(--vscode-foreground)]">{t("settings")}</div>
           <div className="flex items-center gap-2">

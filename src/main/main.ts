@@ -112,7 +112,6 @@ async function setActiveSlotForWindow(windowId: number, slot: number) {
       const proj = projectsState.projects[projectId];
       if (proj?.path) {
         ensureProjectService(projectId, proj.path);
-        await sendToProjectService(projectId, { type: "watcher:start" });
       }
     }
 

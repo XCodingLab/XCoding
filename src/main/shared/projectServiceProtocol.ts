@@ -45,6 +45,8 @@ export type ProjectServiceRequest =
   | { id: string; type: "watcher:start" }
   | { id: string; type: "watcher:stop" }
   | { id: string; type: "watcher:setPaused"; paused: boolean }
+  | { id: string; type: "watcher:watchFile"; relPath: string }
+  | { id: string; type: "watcher:unwatchFile"; relPath: string }
   | { id: string; type: "lang:ts:diagnostics"; relPath: string; content: string }
   | { id: string; type: "lsp:didOpen"; language: LspLanguage; relPath: string; languageId: string; content: string }
   | { id: string; type: "lsp:didChange"; language: LspLanguage; relPath: string; content: string }

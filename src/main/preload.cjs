@@ -133,6 +133,8 @@ contextBridge.exposeInMainWorld("xcoding", {
     searchFiles: (payload) => ipcRenderer.invoke("project:searchFiles", payload),
     searchContent: (payload) => ipcRenderer.invoke("project:searchContent", payload),
     replaceContent: (payload) => ipcRenderer.invoke("project:replaceContent", payload),
+    watchFile: (payload) => ipcRenderer.invoke("project:watchFile", payload),
+    unwatchFile: (payload) => ipcRenderer.invoke("project:unwatchFile", payload),
     lspDidOpen: (payload) => ipcRenderer.invoke("project:lspDidOpen", payload),
     lspDidChange: (payload) => ipcRenderer.invoke("project:lspDidChange", payload),
     lspDidClose: (payload) => ipcRenderer.invoke("project:lspDidClose", payload),

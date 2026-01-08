@@ -50,7 +50,7 @@ export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "
 
 export function loadModel(): string {
   const raw = localStorage.getItem(MODEL_KEY);
-  return typeof raw === "string" && raw.trim() ? raw.trim() : "gpt-5.2";
+  return typeof raw === "string" && raw.trim() ? raw.trim() : "gpt-5.2-codex";
 }
 
 export function loadEffort(): ReasoningEffort {

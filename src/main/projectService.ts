@@ -83,6 +83,8 @@ type ResponseMessage = ProjectServiceResponse;
 let root: string | null = null;
 let watcher: FSWatcher | null = null;
 let watcherPaused = false;
+let openFilesWatcher: FSWatcher | null = null;
+const openFileWatchRefCounts = new Map<string, number>();
 let gitignore: GitignoreMatcher | null = null;
 let gitStatusCache: { at: number; entries: Record<string, string> } | null = null;
 let rgPath: string | null = null;
@@ -97,6 +99,14 @@ type LspServer = {
 };
 
 const lspServers = new Map<LspLanguage, LspServer>();
+
+function normalizePathSeparators(rawPath: string) {
+  return String(rawPath).replace(/[\\/]+/g, "/");
+}
+
+function normalizeRelPath(rawRelPath: string) {
+  return normalizePathSeparators(String(rawRelPath).replace(/^[/\\]+/, ""));
+}
 
 function resolvePyrightLangserverPath(): string | null {
   try {
@@ -145,7 +155,7 @@ async function ensureLspServer(language: LspLanguage): Promise<LspServer> {
     if (!root) return;
     const abs = absPathFromFileUri(String(params?.uri ?? ""));
     if (!abs) return;
-    const rel = path.relative(root, abs).replace(/[\\\\]+/g, "/");
+    const rel = normalizePathSeparators(path.relative(root, abs));
     sendEvent({ type: "lsp:diagnostics", language, relativePath: rel, diagnostics: params.diagnostics ?? [] });
   });
 
@@ -177,7 +187,7 @@ async function ensureLspServer(language: LspLanguage): Promise<LspServer> {
 }
 
 function safeJoin(rel: string) {
-  const cleaned = rel.replace(/^([/\\\\])+/, "");
+  const cleaned = normalizeRelPath(rel);
   if (!root) throw new Error("not_initialized");
   const abs = path.join(root, cleaned);
   const relative = path.relative(root, abs);
@@ -186,7 +196,7 @@ function safeJoin(rel: string) {
 }
 
 function shouldIgnore(rel: string) {
-  const normalized = rel.replace(/^([/\\])+/, "").replace(/[\\]+/g, "/");
+  const normalized = normalizeRelPath(rel);
   const parts = normalized.split("/").filter(Boolean);
   return parts.some((p) => p === ".git" || p === "node_modules" || p === "dist");
 }
@@ -256,7 +266,7 @@ async function walkDirectory(
     if (results.length >= maxResults) break;
     if (entry.startsWith(".") || entry === "node_modules" || entry === "dist" || entry === "build") continue;
     const fullPath = path.join(dir, entry);
-    const relativePath = path.relative(rootPath, fullPath).replace(/[\\\\]+/g, "/");
+    const relativePath = normalizePathSeparators(path.relative(rootPath, fullPath));
     if (matcher?.isIgnored(relativePath)) continue;
     if (shouldIgnore(relativePath)) continue;
 
@@ -484,7 +494,7 @@ function searchPaths(query: string, limit: number) {
       continue;
     }
     for (const ent of entries) {
-      const rel = (dir ? `${dir}/${ent.name}` : ent.name).replace(/[\\]+/g, "/");
+      const rel = normalizeRelPath(dir ? `${dir}/${ent.name}` : ent.name);
       if (shouldIgnore(rel)) continue;
       if (ent.isDirectory()) {
         stack.push(rel);
@@ -509,8 +519,8 @@ function getGitStatusPorcelain(cwd: string, maxEntries: number): Record<string, 
       const rest = rec.slice(3);
       const isRename = xy.startsWith("R") || xy.startsWith("C");
       if (isRename) {
-        const from = rest.replace(/[\\\\]+/g, "/");
-        const to = (parts[i + 1] ?? "").replace(/[\\\\]+/g, "/");
+        const from = normalizePathSeparators(rest);
+        const to = normalizePathSeparators(parts[i + 1] ?? "");
         if (to) {
           entries[to] = xy.trim();
           i += 1;
@@ -519,7 +529,7 @@ function getGitStatusPorcelain(cwd: string, maxEntries: number): Record<string, 
           if (nextTo) entries[nextTo] = xy.trim();
         }
       } else {
-        const rel = rest.replace(/[\\\\]+/g, "/");
+        const rel = normalizePathSeparators(rest);
         if (!rel) continue;
         entries[rel] = xy.trim();
       }
@@ -556,12 +566,12 @@ function ensureWatcherStarted() {
     watcher = chokidar.watch(root, {
       ignoreInitial: true,
       persistent: true,
-      ignored: [/[/\\\\]\.git([/\\\\]|$)/, /[/\\\\]node_modules([/\\\\]|$)/, /[/\\\\]dist([/\\\\]|$)/]
+      ignored: [/[/\\]\.git([/\\]|$)/, /[/\\]node_modules([/\\]|$)/, /[/\\]dist([/\\]|$)/]
     });
     watcher.on("all", (event, absPath) => {
       if (watcherPaused || !root) return;
       gitStatusCache = null;
-      const rel = path.relative(root, absPath).replace(/[\\\\]+/g, "/");
+      const rel = normalizePathSeparators(path.relative(root, absPath));
       if (rel.startsWith("..")) return;
       sendEvent({ type: "watcher", event, path: rel, timestamp: Date.now() });
     });
@@ -574,15 +584,102 @@ function ensureWatcherStarted() {
   }
 }
 
-async function stopWatcher() {
-  if (!watcher) return;
-  const w = watcher;
-  watcher = null;
+function ensureOpenFilesWatcherStarted(firstAbsPath: string) {
+  if (!root) throw new Error("not_initialized");
+  if (openFilesWatcher) return;
   try {
-    await w.close();
+    const chokidar = ensureChokidar();
+    openFilesWatcher = chokidar.watch(firstAbsPath, { ignoreInitial: true, persistent: true });
+    openFilesWatcher.on("all", (event, absPath) => {
+      if (watcherPaused || !root) return;
+      gitStatusCache = null;
+      const rel = normalizePathSeparators(path.relative(root, absPath));
+      if (rel.startsWith("..")) return;
+      sendEvent({ type: "watcher", event, path: rel, timestamp: Date.now() });
+    });
+    openFilesWatcher.on("error", (error) => {
+      sendEvent({ type: "watcher:error", error: String(error) });
+    });
+  } catch (e) {
+    sendEvent({ type: "watcher:error", error: e instanceof Error ? e.message : String(e) });
+    openFilesWatcher = null;
+  }
+}
+
+function watchOpenFile(relPath: string): boolean {
+  const normalized = normalizeRelPath(relPath);
+  if (!normalized) throw new Error("invalid_path");
+  const abs = safeJoin(normalized);
+
+  const prev = openFileWatchRefCounts.get(normalized) ?? 0;
+  openFileWatchRefCounts.set(normalized, prev + 1);
+  if (prev > 0) return true;
+
+  if (!openFilesWatcher) {
+    ensureOpenFilesWatcherStarted(abs);
+    if (!openFilesWatcher) {
+      openFileWatchRefCounts.delete(normalized);
+      return false;
+    }
+    return true;
+  }
+
+  try {
+    openFilesWatcher.add(abs);
+  } catch (e) {
+    sendEvent({ type: "watcher:error", error: e instanceof Error ? e.message : String(e) });
+    openFileWatchRefCounts.delete(normalized);
+    return false;
+  }
+  return true;
+}
+
+async function stopOpenFilesWatcher() {
+  const open = openFilesWatcher;
+  openFilesWatcher = null;
+  openFileWatchRefCounts.clear();
+  if (!open) return;
+  try {
+    await open.close();
   } catch {
     // ignore
   }
+}
+
+function unwatchOpenFile(relPath: string) {
+  const normalized = normalizeRelPath(relPath);
+  if (!normalized) return;
+  const prev = openFileWatchRefCounts.get(normalized) ?? 0;
+  if (prev === 0) {
+    if (openFileWatchRefCounts.size === 0) void stopOpenFilesWatcher();
+    return;
+  }
+  if (prev <= 1) openFileWatchRefCounts.delete(normalized);
+  else openFileWatchRefCounts.set(normalized, prev - 1);
+  if (prev <= 1) {
+    if (!root) return;
+    const abs = safeJoin(normalized);
+    try {
+      openFilesWatcher?.unwatch(abs);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (openFileWatchRefCounts.size === 0) {
+    void stopOpenFilesWatcher();
+  }
+}
+
+async function stopWatcher() {
+  const w = watcher;
+  watcher = null;
+  try {
+    if (w) await w.close();
+  } catch {
+    // ignore
+  }
+  await stopOpenFilesWatcher();
 }
 
 process.on("message", (msg: RequestMessage) => {
@@ -612,6 +709,18 @@ process.on("message", (msg: RequestMessage) => {
       return;
     }
 
+    if (msg.type === "watcher:watchFile") {
+      const watching = watchOpenFile(msg.relPath);
+      reply({ id: msg.id, ok: true, result: { watching } });
+      return;
+    }
+
+    if (msg.type === "watcher:unwatchFile") {
+      unwatchOpenFile(msg.relPath);
+      reply({ id: msg.id, ok: true, result: { watching: openFileWatchRefCounts.size > 0 } });
+      return;
+    }
+
     if (msg.type === "watcher:stop") {
       void stopWatcher().then(() => reply({ id: msg.id, ok: true, result: { watching: false } }));
       return;
@@ -619,7 +728,7 @@ process.on("message", (msg: RequestMessage) => {
 
     if (msg.type === "lang:ts:diagnostics") {
       // Lightweight TS diagnostics: only parse+syntax (no project-wide typecheck).
-      const fileName = msg.relPath.replace(/[\\]+/g, "/");
+      const fileName = normalizeRelPath(msg.relPath);
       const transpile = ts.transpileModule(msg.content, {
         fileName,
         reportDiagnostics: true,
@@ -712,7 +821,7 @@ process.on("message", (msg: RequestMessage) => {
         const name = d.name;
         const kind = d.isDirectory() ? ("dir" as const) : ("file" as const);
         const relPath = msg.relDir ? `${msg.relDir.replace(/\/+$/, "")}/${name}` : name;
-        const normalizedRel = relPath.replace(/[\\\\]+/g, "/");
+        const normalizedRel = normalizeRelPath(relPath);
         const ignored = gitignore?.isIgnored(normalizedRel) ?? false;
         return { name, kind, ignored };
       });
@@ -832,7 +941,7 @@ process.on("message", (msg: RequestMessage) => {
                 if (json.type !== "match") continue;
                 totalMatches += 1;
                 const absPath = String(json.data.path.text ?? "");
-                const relativePath = path.relative(root!, absPath).replace(/[\\\\]+/g, "/");
+                const relativePath = normalizePathSeparators(path.relative(root!, absPath));
                 fileSet.add(relativePath);
                 if (matches.length < maxResults) {
                   const col0 = Number(json.data.submatches?.[0]?.start ?? 0);
@@ -864,7 +973,7 @@ process.on("message", (msg: RequestMessage) => {
                 if (json.type === "match") {
                   totalMatches += 1;
                   const absPath = String(json.data.path.text ?? "");
-                  const relativePath = path.relative(root!, absPath).replace(/[\\\\]+/g, "/");
+                  const relativePath = normalizePathSeparators(path.relative(root!, absPath));
                   fileSet.add(relativePath);
                   if (matches.length < maxResults) {
                     const col0 = Number(json.data.submatches?.[0]?.start ?? 0);
@@ -979,7 +1088,7 @@ process.on("message", (msg: RequestMessage) => {
             if (buf.includes(0)) continue; // binary
             text = buf.toString("utf8");
           } catch (e) {
-            errors.push({ relativePath: path.relative(root!, absPath).replace(/[\\\\]+/g, "/"), error: e instanceof Error ? e.message : "read_failed" });
+            errors.push({ relativePath: normalizePathSeparators(path.relative(root!, absPath)), error: e instanceof Error ? e.message : "read_failed" });
             continue;
           }
 
@@ -995,9 +1104,9 @@ process.on("message", (msg: RequestMessage) => {
 
           try {
             fs.writeFileSync(absPath, next, "utf8");
-            changed.push(path.relative(root!, absPath).replace(/[\\\\]+/g, "/"));
+            changed.push(normalizePathSeparators(path.relative(root!, absPath)));
           } catch (e) {
-            errors.push({ relativePath: path.relative(root!, absPath).replace(/[\\\\]+/g, "/"), error: e instanceof Error ? e.message : "write_failed" });
+            errors.push({ relativePath: normalizePathSeparators(path.relative(root!, absPath)), error: e instanceof Error ? e.message : "write_failed" });
           }
         }
 

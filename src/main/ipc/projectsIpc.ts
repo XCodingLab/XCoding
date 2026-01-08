@@ -30,7 +30,6 @@ function setSlotPathInternal(slot: number, projectPath: string, windowId?: numbe
   if (slot === activeSlotForWindow) {
     try {
       ensureProjectService(id, normalized);
-      void sendToProjectService(id, { type: "watcher:start" });
       void sendToProjectService(id, { type: "watcher:setPaused", paused: false });
     } catch {
       // ignore

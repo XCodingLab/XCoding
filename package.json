@@ -12,7 +12,7 @@
     "setup:codex": "node scripts/fetch-codex-binary.cjs",
     "setup:fonts": "node scripts/fetch-firacode-nerd-font.cjs",
     "dev": "concurrently -k \"vite\" \"pnpm run main:watch\" \"wait-on http://127.0.0.1:5173 file:dist/main/main.cjs && pnpm run electron:dev\"",
-    "main:watch": "tsup --config tsup.config.ts --watch --onSuccess \"node scripts/copy-preload.cjs\"",
+    "main:watch": "tsup --config tsup.config.ts --watch src/main --watch tsup.config.ts --onSuccess \"node scripts/copy-preload.cjs\"",
     "electron:dev": "node scripts/electron-dev.cjs .",
     "build": "vite build && tsup --config tsup.config.ts && node scripts/copy-preload.cjs",
     "start": "electron .",

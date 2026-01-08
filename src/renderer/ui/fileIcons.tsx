@@ -1,7 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  AppWindow,
+  Box,
   Braces,
   Code,
+  Code2,
   Database,
   File,
   FileCode,
@@ -9,10 +12,18 @@ import {
   FileJson,
   FileText,
   FileType,
+  FlaskConical,
   Folder,
   FolderOpen,
+  GitBranch,
+  Globe,
+  Layout,
+  Library,
+  Package,
+  Server,
   Settings,
-  Terminal
+  Terminal,
+  Wrench
 } from "lucide-react";
 
 const fileIconMap: Record<string, LucideIcon> = {
@@ -72,8 +83,42 @@ const specialFileIconMap: Record<string, LucideIcon> = {
   "readme.md": FileText
 };
 
+const specialFolderIconMap: Record<string, LucideIcon> = {
+  src: Code2,
+  node_modules: Package,
+  dist: Box,
+  build: Box,
+  out: Box,
+  ".git": GitBranch,
+  ".github": GitBranch,
+  ".vscode": Settings,
+  components: Layout,
+  api: Server,
+  server: Server,
+  assets: FileImage,
+  images: FileImage,
+  public: Globe,
+  test: FlaskConical,
+  tests: FlaskConical,
+  __tests__: FlaskConical,
+  docs: FileText,
+  utils: Wrench,
+  lib: Library,
+  types: FileCode,
+  hooks: FileCode,
+  app: AppWindow
+};
+
 export function getExplorerIcon(name: string, kind: "dir" | "file", isExpanded = false): { Icon: LucideIcon; colorClass: string } {
   if (kind === "dir") {
+    const lowerName = name.toLowerCase();
+    const SpecialIcon = specialFolderIconMap[lowerName];
+    if (SpecialIcon) {
+      // Special folders often have specific colors in themes, but we'll stick to a slightly different generic or specific logic if needed.
+      // For now, let's keep the amber color but maybe vary it for some?
+      // Or just keep uniform directory color for consistency, but change the icon.
+      return { Icon: SpecialIcon, colorClass: "text-amber-400" };
+    }
     return { Icon: isExpanded ? FolderOpen : Folder, colorClass: "text-amber-400" };
   }
 

@@ -53,6 +53,22 @@ function toLocalFileUrl(path: string) {
   return `local-file://${prefixed}`;
 }
 
+function formatModelLabel(raw: string) {
+  const normalized = String(raw).replace(/-/g, " ").replace(/\s+/g, " ").trim();
+  return normalized
+    .split(" ")
+    .map((token) => {
+      const lower = token.toLowerCase();
+      if (lower === "gpt") return "GPT";
+      if (lower === "codex") return "codex";
+      if (lower === "max") return "max";
+      return token;
+    })
+    .join(" ");
+}
+
+const BUILTIN_MODELS = ["gpt-5.2", "gpt-5.2-codex", "gpt-5.1", "gpt-5.1-codex", "gpt-5.1-codex-max"] as const;
+
 function readTokensInContextWindow(tokenUsage: any): number | null {
   return typeof tokenUsage?.last?.totalTokens === "number"
     ? tokenUsage.last.totalTokens
@@ -227,7 +243,8 @@ export default function Composer({
 
   const modelLabel = useMemo(() => {
     const m = availableModels?.find((x) => x.model === model || x.id === model);
-    return m?.displayName || m?.model || m?.id || model;
+    const raw = String(m?.displayName || m?.model || m?.id || model);
+    return formatModelLabel(raw);
   }, [availableModels, model]);
 
   const effortLabel = useMemo(() => {
@@ -880,19 +897,43 @@ export default function Composer({
             compact={compactPickers}
             fallbackIcon={<Cpu className="h-4 w-4" />}
             onChange={(v) => onSelectModel(v)}
-            options={
-              availableModels?.length
+            options={(() => {
+              const builtin = BUILTIN_MODELS.map((value) => ({ value, label: formatModelLabel(value) }));
+
+              const fromApi = availableModels?.length
                 ? availableModels.map((m) => ({
                   value: m.model || m.id,
-                  label: m.displayName || m.model || m.id
+                  label: formatModelLabel(m.displayName || m.model || m.id)
                 }))
-                : [
-                  { value: "gpt-5.2", label: "GPT-5.2" },
-                  { value: "gpt-5.1", label: "GPT-5.1" },
-                  { value: "gpt-4o", label: "GPT-4o" },
-                  { value: "gpt-4o-mini", label: "GPT-4o mini" }
-                ]
-            }
+                : [];
+
+              const seen = new Set(fromApi.map((o) => o.value).filter(Boolean));
+              const merged = [...fromApi, ...builtin.filter((o) => !seen.has(o.value))].filter((o) => o.value);
+
+              // Keep 5.2 variants together, then 5.1 variants together (others last).
+              const order = BUILTIN_MODELS as readonly string[];
+              const rank = (value: string) => {
+                const i = (order as readonly string[]).indexOf(value);
+                return i === -1 ? Number.POSITIVE_INFINITY : i;
+              };
+
+              const deduped: Array<{ value: string; label: string }> = [];
+              const seenValues = new Set<string>();
+              for (const o of merged) {
+                if (seenValues.has(o.value)) continue;
+                seenValues.add(o.value);
+                deduped.push(o);
+              }
+
+              deduped.sort((a, b) => {
+                const ra = rank(a.value);
+                const rb = rank(b.value);
+                if (ra !== rb) return ra - rb;
+                return a.label.localeCompare(b.label);
+              });
+
+              return deduped;
+            })()}
             className="shrink-0"
             maxMenuHeight={360}
           />

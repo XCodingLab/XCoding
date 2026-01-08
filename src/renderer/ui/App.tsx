@@ -117,6 +117,9 @@ export default function App() {
   const [aiBySlot, setAiBySlot] = useState<Record<number, AiStatus>>(() =>
     Object.fromEntries(Array.from({ length: 8 }).map((_, i) => [i + 1, "idle"])) as Record<number, AiStatus>
   );
+  const [codexRunningBySlot, setCodexRunningBySlot] = useState<Record<number, boolean>>(() =>
+    Object.fromEntries(Array.from({ length: 8 }).map((_, i) => [i + 1, false])) as Record<number, boolean>
+  );
 
   const [projectsState, setProjectsState] = useState<ProjectsState>(() => ({
     schemaVersion: 3,
@@ -1257,6 +1260,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handler = (e: WindowEventMap["xcoding:slotAiStatus"]) => {
+      const { slot, status, source } = e.detail;
+      if (slot < 1 || slot > 8) return;
+      if (source !== "codex") return;
+      const nextRunning = status === "running";
+      setCodexRunningBySlot((prev) => (prev[slot] === nextRunning ? prev : { ...prev, [slot]: nextRunning }));
+    };
+    window.addEventListener("xcoding:slotAiStatus", handler);
+    return () => window.removeEventListener("xcoding:slotAiStatus", handler);
+  }, []);
+
+  useEffect(() => {
     // Bootstrap main-side watchers/services for the initial slot of this window.
     void window.xcoding.projects.setActiveSlot(activeProjectSlot);
   }, []);
@@ -1490,7 +1505,10 @@ export default function App() {
 
 	            // Project Switcher
 	            activeProjectSlot={activeProjectSlot}
-	            projectSlots={visualOrderedProjectSlots.map((s) => ({ ...s, aiStatus: aiBySlot[s.slot] }))}
+	            projectSlots={visualOrderedProjectSlots.map((s) => {
+                const status = aiBySlot[s.slot] === "running" || codexRunningBySlot[s.slot] ? "running" : "idle";
+                return { ...s, aiStatus: status };
+              })}
 	            onSelectProjectSlot={(slot) => {
 	              setActiveProjectSlot(slot);
 	              void window.xcoding.projects.setActiveSlot(slot);

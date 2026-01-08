@@ -160,6 +160,8 @@ declare global {
       project: {
         readFile: (payload: { slot: number; path: string }) => Promise<{ ok: boolean; content?: string; reason?: string }>;
         writeFile: (payload: { slot: number; path: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;
+        watchFile: (payload: { slot: number; path: string }) => Promise<{ ok: boolean; reason?: string }>;
+        unwatchFile: (payload: { slot: number; path: string }) => Promise<{ ok: boolean; reason?: string }>;
         listDir: (payload: { slot: number; dir: string }) => Promise<{
           ok: boolean;
           entries?: Array<{ name: string; kind: "dir" | "file"; ignored?: boolean }>;
@@ -257,5 +259,12 @@ declare global {
         copyText: (text: string) => Promise<{ ok: boolean; reason?: string }>;
       };
     };
+  }
+
+  type XcodingSlotAiStatus = "idle" | "running";
+  type XcodingSlotAiStatusDetail = { slot: number; status: XcodingSlotAiStatus; source: "codex" };
+
+  interface WindowEventMap {
+    "xcoding:slotAiStatus": CustomEvent<XcodingSlotAiStatusDetail>;
   }
 }

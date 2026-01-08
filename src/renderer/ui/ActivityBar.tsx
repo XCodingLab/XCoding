@@ -1,5 +1,5 @@
 import React from "react";
-import { Copy, MessageSquare, Settings, TerminalSquare } from "lucide-react";
+import { Folder, MessageSquare, Settings, TerminalSquare } from "lucide-react";
 import { useI18n } from "./i18n";
 
 type Props = {
@@ -58,7 +58,7 @@ export default function ActivityBar({
         title={t("explorer")}
         active={isExplorerVisible}
         onClick={onToggleExplorer}
-        icon={<Copy className="h-6 w-6 stroke-[1.5]" />}
+        icon={<Folder className="h-6 w-6 stroke-[1.5]" />}
       />
 
       <ActivityBarItem

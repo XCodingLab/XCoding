@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { messages, useI18n, type Language } from "./i18n";
 import { ArrowRightLeft, Folder, Plus } from "lucide-react";
 import { createPortal } from "react-dom";
+import { useUiTheme } from "./UiThemeContext";
 
 type Props = {
   title?: string;
@@ -137,6 +138,7 @@ export default function TitleBar({
   ...props
 }: Props) {
   const { t, language: contextLanguage } = useI18n();
+  const { theme } = useUiTheme();
   const effectiveTitle = title ?? t("appTitle");
   const ua = navigator.userAgent.toLowerCase();
   const isWindows = ua.includes("windows");
@@ -153,6 +155,7 @@ export default function TitleBar({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectMenuStyle, setProjectMenuStyle] = useState<{ left: number; top: number; minWidth: number } | null>(null);
   const projectButtonRef = useRef<HTMLButtonElement | null>(null);
+  const isLightTheme = theme === "light";
 
   const languageButtonText = useMemo(() => {
     const base = String(currentLanguage || "").split("-")[0] || String(currentLanguage || "");
@@ -281,7 +284,9 @@ export default function TitleBar({
                     className={[
                       "flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px]",
                       status === "running"
-                        ? "bg-emerald-500/15 text-emerald-200"
+                        ? isLightTheme
+                          ? "bg-emerald-600/20 text-emerald-800"
+                          : "bg-emerald-500/15 text-emerald-200"
                         : "bg-[var(--vscode-toolbar-hoverBackground)] text-[var(--vscode-descriptionForeground)]"
                     ].join(" ")}
                     title={statusLabel}
@@ -289,7 +294,11 @@ export default function TitleBar({
                     <span
                       className={[
                         "h-2 w-2 rounded-full",
-                        status === "running" ? "bg-emerald-400" : "bg-[var(--vscode-descriptionForeground)]"
+                        status === "running"
+                          ? isLightTheme
+                            ? "bg-emerald-600"
+                            : "bg-emerald-400"
+                          : "bg-[var(--vscode-descriptionForeground)]"
                       ].join(" ")}
                     />
                     <span>{statusLabel}</span>

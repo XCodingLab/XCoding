@@ -90,6 +90,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
   const attachImageInputRef = useRef<HTMLInputElement | null>(null);
   const hydratedSessionThreadIdsRef = useRef<Set<string>>(new Set());
   const activeThreadIdRef = useRef<string | null>(null);
+  const lastReportedAiStatusRef = useRef<"idle" | "running" | null>(null);
 
   const activeThread = activeThreadId ? storeRef.current.threadById[activeThreadId] ?? null : null;
   activeThreadIdRef.current = activeThreadId;
@@ -468,6 +469,13 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
       return s.includes("progress") || s === "inprogress" || s === "in_progress";
     })
   );
+
+  useEffect(() => {
+    const next = isTurnInProgress ? "running" : "idle";
+    if (lastReportedAiStatusRef.current === next) return;
+    lastReportedAiStatusRef.current = next;
+    window.dispatchEvent(new CustomEvent<XcodingSlotAiStatusDetail>("xcoding:slotAiStatus", { detail: { slot, status: next, source: "codex" } }));
+  }, [isTurnInProgress, slot]);
 
   const latestTurnDiff = (() => {
     if (!activeThread) return null;

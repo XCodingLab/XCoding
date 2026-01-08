@@ -45,6 +45,13 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
     void ensureMonacoLanguage(language);
   }, [language]);
 
+  useEffect(() => {
+    window.xcoding.project.watchFile({ slot, path }).catch(() => {});
+    return () => {
+      window.xcoding.project.unwatchFile({ slot, path }).catch(() => {});
+    };
+  }, [path, slot]);
+
   const applyDiffDecorations = useCallback((editor: monaco.editor.IStandaloneCodeEditor) => {
     const model = editor.getModel();
     if (!model) return;
