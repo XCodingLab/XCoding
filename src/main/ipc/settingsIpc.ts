@@ -1,5 +1,6 @@
 import { ipcMain } from "electron";
 import { persistSettingsToDisk, settings, type AppSettings } from "../stores/settingsStore";
+import { resolveThemePack } from "../managers/themeManager";
 
 export function registerSettingsIpc({
   onLanguageChanged
@@ -17,6 +18,15 @@ export function registerSettingsIpc({
 
   ipcMain.handle("settings:setTheme", (_event, { theme }: { theme: AppSettings["ui"]["theme"] }) => {
     settings.ui.theme = theme;
+    settings.ui.themePackId = theme === "light" ? "builtin-light" : "builtin-dark";
+    persistSettingsToDisk();
+    return { ok: true };
+  });
+
+  ipcMain.handle("settings:setThemePack", (_event, { id }: { id: string }) => {
+    const resolved = resolveThemePack(id);
+    settings.ui.themePackId = resolved.id;
+    settings.ui.theme = resolved.appearance;
     persistSettingsToDisk();
     return { ok: true };
   });
@@ -58,4 +68,3 @@ export function registerSettingsIpc({
     }
   );
 }
-

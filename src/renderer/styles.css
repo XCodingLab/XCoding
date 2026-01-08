@@ -93,6 +93,17 @@
   --vscode-font-family: var(--xcoding-font-family);
   --vscode-font-size: 13px;
 
+  /* Explorer icon colors (theme-pack overridable) */
+  --xcoding-icon-folder: #fbbf24;
+  --xcoding-icon-ts: #60a5fa;
+  --xcoding-icon-js: #facc15;
+  --xcoding-icon-json: #eab308;
+  --xcoding-icon-html: #fb923c;
+  --xcoding-icon-css: #f472b6;
+  --xcoding-icon-md: #38bdf8;
+  --xcoding-icon-go: #22d3ee;
+  --xcoding-icon-py: #34d399;
+
   --vscode-foreground: #cccccc;
   --vscode-descriptionForeground: #9d9d9d;
 
@@ -195,6 +206,25 @@
   /* Codex transcript behavior */
   --xcoding-codex-collapsible-max-h: 30vh;
   /* max height for tool/thinking details */
+}
+
+/* 表单控件：确保深色/浅色主题下的原生 <select> 下拉选项可读。 */
+:root[data-theme="dark"] select {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] select {
+  color-scheme: light;
+}
+
+select {
+  color: var(--vscode-foreground);
+}
+
+select option,
+select optgroup {
+  background-color: var(--color-token-dropdown-background);
+  color: var(--vscode-foreground);
 }
 
 /* Minimal utility classes to mirror Codex webview token naming */
@@ -627,7 +657,7 @@ body.xcoding-tab-dragging .monaco-editor * {
   }
 }
 
-.light {
+:root[data-theme="light"] {
 
   /* Light Mode Overrides - Clean & White */
 
@@ -755,7 +785,7 @@ body.xcoding-tab-dragging .monaco-editor * {
   border: none !important;
 }
 
-.light .monaco-editor .view-overlays .current-line {
+:root[data-theme="light"] .monaco-editor .view-overlays .current-line {
   background-color: rgba(59, 130, 246, 0.1) !important;
   border: none !important;
 }

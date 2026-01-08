@@ -83,6 +83,9 @@ importers:
       vscode-languageserver-protocol:
         specifier: ^3.17.5
         version: 3.17.5
+      yauzl:
+        specifier: ^2.10.0
+        version: 2.10.0
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.0
@@ -93,6 +96,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.5
         version: 18.3.7(@types/react@18.3.27)
+      '@types/yauzl':
+        specifier: ^2.10.3
+        version: 2.10.3
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.18.0
         version: 8.50.1(@typescript-eslint/parser@8.50.1(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)
@@ -3665,7 +3671,6 @@ snapshots:
   '@types/yauzl@2.10.3':
     dependencies:
       '@types/node': 25.0.3
-    optional: true
 
   '@typescript-eslint/eslint-plugin@8.50.1(@typescript-eslint/parser@8.50.1(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)':
     dependencies:

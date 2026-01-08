@@ -14,6 +14,8 @@ import ProjectWorkspaceMain from "./ProjectWorkspaceMain";
 import IdeSettingsModal from "./IdeSettingsModal";
 import type { TerminalPanelState } from "./TerminalPanel";
 import TitleBar from "./TitleBar";
+import { applyResolvedThemePack } from "./theme/applyTheme";
+import type { ThemePackSummary } from "./theme/types";
 import {
   getSlotProjectId,
   makeEmptySlotUiState,
@@ -47,6 +49,9 @@ function normalizeRelPath(input: string) {
 export default function App() {
   const [language, setLanguage] = useState<Language>("en-US");
   const [theme, setTheme] = useState<UiTheme>("dark");
+  const [themePackId, setThemePackId] = useState("builtin-dark");
+  const [themePacks, setThemePacks] = useState<ThemePackSummary[]>([]);
+  const [monacoThemeName, setMonacoThemeName] = useState("xcoding-dark");
   const [activeProjectSlot, setActiveProjectSlot] = useState<number>(() => {
     try {
       const url = new URL(window.location.href);
@@ -99,12 +104,58 @@ export default function App() {
     }
   }
 
-  async function setThemeAndPersist(next: UiTheme) {
-    setTheme(next);
+  async function setThemePackAndPersist(nextId: string) {
     try {
-      await window.xcoding.settings.setTheme(next);
+      const resolved = await window.xcoding.themes.getResolved(nextId);
+      applyResolvedThemePack(resolved);
+      setTheme(resolved.appearance);
+      setMonacoThemeName(resolved.monacoThemeName);
+      setThemePackId(resolved.id);
     } catch {
       // ignore
+      setThemePackId(nextId);
+    }
+    try {
+      await window.xcoding.settings.setThemePack(nextId);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function openThemesDir() {
+    try {
+      await window.xcoding.themes.openDir();
+    } catch {
+      // ignore
+    }
+  }
+
+  async function importThemePackZip() {
+    try {
+      const res = await window.xcoding.themes.importZip();
+      if (res.ok) {
+        if ("canceled" in res && res.canceled) return;
+
+        if ("themeId" in res && typeof res.themeId === "string") {
+          const packs = await window.xcoding.themes.list();
+          setThemePacks(packs);
+
+          const importedId = res.themeId;
+          if (importedId === themePackId) {
+            await setThemePackAndPersist(importedId);
+            return;
+          }
+
+          const shouldSwitch = window.confirm(`${t("importThemePackSwitchConfirm")}\n\n${importedId}`);
+          if (shouldSwitch) await setThemePackAndPersist(importedId);
+        }
+        return;
+      }
+
+      const extra = res.themeId ? ` (${res.themeId})` : "";
+      window.alert(`${t("importThemePackFailed")}\n\n${String(res.reason || "unknown")}${extra}`);
+    } catch {
+      window.alert(t("importThemePackFailed"));
     }
   }
 
@@ -162,8 +213,6 @@ export default function App() {
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.colorScheme = theme;
-    document.body.classList.remove("light", "dark");
-    document.body.classList.add(theme);
   }, [theme]);
 
   useEffect(() => {
@@ -1221,16 +1270,49 @@ export default function App() {
   }
 
   useEffect(() => {
-    void window.xcoding.settings.get().then((s) => {
-      setLanguage(s.ui.language);
-      setTheme(s.ui.theme === "light" ? "light" : "dark");
-      setAutoApplyAll(s.ai.autoApplyAll);
-      setAiConfig({ apiBase: s.ai.apiBase, apiKey: s.ai.apiKey, model: s.ai.model });
-      if (s.ui.layout) {
-        defaultUiLayoutRef.current = s.ui.layout;
-        setLayout(s.ui.layout);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const s = await window.xcoding.settings.get();
+        if (cancelled) return;
+        setLanguage(s.ui.language);
+        setAutoApplyAll(s.ai.autoApplyAll);
+        setAiConfig({ apiBase: s.ai.apiBase, apiKey: s.ai.apiKey, model: s.ai.model });
+        if (s.ui.layout) {
+          defaultUiLayoutRef.current = s.ui.layout;
+          setLayout(s.ui.layout);
+        }
+
+        const initialThemePackId =
+          typeof s.ui.themePackId === "string" && s.ui.themePackId.trim()
+            ? s.ui.themePackId.trim()
+            : s.ui.theme === "light"
+              ? "builtin-light"
+              : "builtin-dark";
+        setThemePackId(initialThemePackId);
+
+        const packs = await window.xcoding.themes.list();
+        if (cancelled) return;
+        setThemePacks(packs);
+
+        const isAvailable = packs.some((p) => p.id === initialThemePackId);
+        const effectiveId = isAvailable ? initialThemePackId : s.ui.theme === "light" ? "builtin-light" : "builtin-dark";
+        if (!isAvailable) {
+          setThemePackId(effectiveId);
+          void window.xcoding.settings.setThemePack(effectiveId);
+        }
+
+        const resolved = await window.xcoding.themes.getResolved(effectiveId);
+        if (cancelled) return;
+        applyResolvedThemePack(resolved);
+        setTheme(resolved.appearance);
+        setMonacoThemeName(resolved.monacoThemeName);
+      } catch {
+        // ignore
       }
-    });
+    })();
+
     void window.xcoding.projects.get().then((res) => {
       if (!res.ok) return;
       setProjectsState(res.state as ProjectsState);
@@ -1297,6 +1379,7 @@ export default function App() {
     });
 
     return () => {
+      cancelled = true;
       disposeSwitch();
       disposeProjects();
       disposeDetached();
@@ -1304,6 +1387,16 @@ export default function App() {
       disposeStream();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isIdeSettingsOpen) return;
+    void window.xcoding.themes
+      .list()
+      .then((packs) => setThemePacks(packs))
+      .catch(() => {
+        // ignore
+      });
+  }, [isIdeSettingsOpen]);
 
   useEffect(() => {
     // Bootstrap main-side watchers/services for the initial slot of this window.
@@ -1521,11 +1614,11 @@ export default function App() {
 
   return (
     <I18nContext.Provider value={{ language, setLanguage, t }}>
-      <UiThemeContext.Provider value={{ theme }}>
-        <div
-          className="flex h-full w-full flex-col bg-[var(--aurora-base)] text-[var(--vscode-foreground)]"
-          style={{ backgroundImage: "var(--aurora-bg)" }}
-        >
+	      <UiThemeContext.Provider value={{ theme, themePackId, monacoThemeName }}>
+	        <div
+	          className="flex h-full w-full flex-col bg-[var(--aurora-base)] text-[var(--vscode-foreground)]"
+	          style={{ backgroundImage: "var(--aurora-bg)" }}
+	        >
           <TitleBar
             isExplorerVisible={effectiveLayout.isExplorerVisible}
             isChatVisible={effectiveLayout.isChatVisible}
@@ -1547,8 +1640,11 @@ export default function App() {
             onClose={() => setIsIdeSettingsOpen(false)}
             language={language}
             onSetLanguage={(next) => void setLanguageAndPersist(next)}
-            theme={theme}
-            onSetTheme={(next) => void setThemeAndPersist(next)}
+            themePackId={themePackId}
+            themePacks={themePacks}
+            onSetThemePackId={(next) => void setThemePackAndPersist(next)}
+            onOpenThemesDir={() => void openThemesDir()}
+            onImportThemePack={() => void importThemePackZip()}
             isExplorerVisible={layout.isExplorerVisible}
             isChatVisible={layout.isChatVisible}
             onToggleExplorer={() => setLayoutAndPersist((p) => ({ ...p, isExplorerVisible: !p.isExplorerVisible }))}

@@ -94,7 +94,7 @@ function getRendererPreference(): "auto" | "dom" | "canvas" | "webgl" {
 
 function readCssVar(name: string, fallback: string) {
   try {
-    const v = getComputedStyle(document.body).getPropertyValue(name).trim();
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   } catch {
     return fallback;
@@ -106,9 +106,9 @@ function getTerminalTheme(theme: "dark" | "light") {
   const defaultBg = isLight ? "#00000000" : "#1e1e1e"; // Transparent fallback for light, Dark for dark
   const defaultFg = isLight ? "#020617" : "#cccccc"; // Slate 950 for light
 
-  const background = isLight ? "#00000000" : (readCssVar("--vscode-terminal-background", defaultBg) || defaultBg);
-  const foreground = readCssVar("--vscode-terminal-foreground", defaultFg) || defaultFg;
-  const cursor = readCssVar("--vscode-terminal-cursor", foreground) || foreground;
+  const background = readCssVar("--vscode-terminal-background", defaultBg);
+  const foreground = readCssVar("--vscode-terminal-foreground", defaultFg);
+  const cursor = readCssVar("--vscode-terminal-cursor", foreground);
 
   return { background, foreground, cursor };
 }
@@ -128,7 +128,7 @@ export default function TerminalView({
   onOpenFile
 }: Props) {
   const { t } = useI18n();
-  const { theme } = useUiTheme();
+  const { theme, themePackId } = useUiTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -196,7 +196,7 @@ export default function TerminalView({
     } catch {
       // ignore
     }
-  }, [theme]);
+  }, [theme, themePackId]);
 
   function flushWriteBuffer() {
     if (!terminalRef.current) return;

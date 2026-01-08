@@ -47,12 +47,14 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "vscode-jsonrpc": "^8.2.1",
-    "vscode-languageserver-protocol": "^3.17.5"
+    "vscode-languageserver-protocol": "^3.17.5",
+    "yauzl": "^2.10.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/yauzl": "^2.10.3",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "@vitejs/plugin-react": "^4.3.4",

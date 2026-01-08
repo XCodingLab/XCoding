@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useI18n, type Language } from "./i18n";
-import type { UiTheme } from "./UiThemeContext";
+import type { ThemePackSummary } from "./theme/types";
 
 type Props = {
   isOpen: boolean;
@@ -9,8 +9,11 @@ type Props = {
   language: Language;
   onSetLanguage: (language: Language) => void;
 
-  theme: UiTheme;
-  onSetTheme: (theme: UiTheme) => void;
+  themePackId: string;
+  themePacks: ThemePackSummary[];
+  onSetThemePackId: (id: string) => void;
+  onOpenThemesDir: () => void;
+  onImportThemePack: () => void;
 
   isExplorerVisible: boolean;
   isChatVisible: boolean;
@@ -23,8 +26,11 @@ export default function IdeSettingsModal({
   onClose,
   language,
   onSetLanguage,
-  theme,
-  onSetTheme,
+  themePackId,
+  themePacks,
+  onSetThemePackId,
+  onOpenThemesDir,
+  onImportThemePack,
   isExplorerVisible,
   isChatVisible,
   onToggleExplorer,
@@ -39,15 +45,6 @@ export default function IdeSettingsModal({
         { value: "en-US" as const, label: t("languageEnglish") },
         { value: "zh-CN" as const, label: t("languageChinese") }
       ] satisfies Array<{ value: Language; label: string }>,
-    [t]
-  );
-
-  const themeOptions = useMemo(
-    () =>
-      [
-        { value: "dark" as const, label: t("themeDark") },
-        { value: "light" as const, label: t("themeLight") }
-      ] satisfies Array<{ value: UiTheme; label: string }>,
     [t]
   );
 
@@ -120,25 +117,34 @@ export default function IdeSettingsModal({
 
             <div>
               <div className="mb-2 text-sm font-semibold text-[var(--vscode-foreground)]">{t("theme")}</div>
-              <div className="inline-flex overflow-hidden rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]">
-                {themeOptions.map((opt) => {
-                  const active = opt.value === theme;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      className={[
-                        "px-3 py-2 text-sm",
-                        active
-                          ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
-                          : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
-                      ].join(" ")}
-                      onClick={() => onSetTheme(opt.value)}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  className="min-w-[220px] rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-3 py-2 text-sm text-[var(--vscode-foreground)] outline-none focus:border-[var(--vscode-focusBorder)]"
+                  onChange={(e) => onSetThemePackId(e.target.value)}
+                  value={themePackId}
+                >
+                  {(themePacks.length ? themePacks : [{ id: themePackId, name: themePackId, appearance: "dark", source: "builtin" }]).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  className="rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-3 py-2 text-sm text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                  onClick={onImportThemePack}
+                  type="button"
+                >
+                  {t("importThemePack")}
+                </button>
+
+                <button
+                  className="rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-3 py-2 text-sm text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+                  onClick={onOpenThemesDir}
+                  type="button"
+                >
+                  {t("openThemesFolder")}
+                </button>
               </div>
             </div>
 

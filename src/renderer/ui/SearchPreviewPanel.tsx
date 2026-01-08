@@ -1,7 +1,7 @@
 import { Editor, loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ensureMonacoLanguage, getMonacoThemeName } from "../monacoSetup";
+import { ensureMonacoLanguage } from "../monacoSetup";
 import { languageFromPath } from "../languageSupport";
 import { useUiTheme } from "./UiThemeContext";
 
@@ -17,7 +17,7 @@ type Props = {
 };
 
 export default function SearchPreviewPanel({ slot, path, line, query, matchCase = false, regex = false }: Props) {
-  const { theme } = useUiTheme();
+  const { theme, monacoThemeName } = useUiTheme();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const [content, setContent] = useState<string | null>(null);
@@ -126,7 +126,7 @@ export default function SearchPreviewPanel({ slot, path, line, query, matchCase 
           path={modelUri}
           value={content}
           language={language}
-          theme={getMonacoThemeName(theme)}
+          theme={monacoThemeName}
           onMount={(editor) => {
             editorRef.current = editor;
             applyHighlights(editor, true);

@@ -74,7 +74,7 @@ const specialFileIconMap: Record<string, LucideIcon> = {
 
 export function getExplorerIcon(name: string, kind: "dir" | "file", isExpanded = false): { Icon: LucideIcon; colorClass: string } {
   if (kind === "dir") {
-    return { Icon: isExpanded ? FolderOpen : Folder, colorClass: "text-amber-400" };
+    return { Icon: isExpanded ? FolderOpen : Folder, colorClass: "text-[var(--xcoding-icon-folder)]" };
   }
 
   const lowerName = name.toLowerCase();
@@ -88,26 +88,26 @@ export function getExplorerIcon(name: string, kind: "dir" | "file", isExpanded =
     switch (ext) {
       case "ts":
       case "tsx":
-        return "text-blue-400";
+        return "text-[var(--xcoding-icon-ts)]";
       case "js":
       case "jsx":
       case "mjs":
       case "cjs":
-        return "text-yellow-400";
+        return "text-[var(--xcoding-icon-js)]";
       case "json":
-        return "text-yellow-500";
+        return "text-[var(--xcoding-icon-json)]";
       case "html":
-        return "text-orange-400";
+        return "text-[var(--xcoding-icon-html)]";
       case "css":
       case "scss":
       case "less":
-        return "text-pink-400";
+        return "text-[var(--xcoding-icon-css)]";
       case "md":
-        return "text-sky-400";
+        return "text-[var(--xcoding-icon-md)]";
       case "go":
-        return "text-cyan-400";
+        return "text-[var(--xcoding-icon-go)]";
       case "py":
-        return "text-emerald-400";
+        return "text-[var(--xcoding-icon-py)]";
       default:
         return "text-[var(--vscode-descriptionForeground)]";
     }
@@ -115,4 +115,3 @@ export function getExplorerIcon(name: string, kind: "dir" | "file", isExpanded =
 
   return { Icon, colorClass };
 }
-
