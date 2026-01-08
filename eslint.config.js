@@ -5,8 +5,11 @@ import tsPlugin from "@typescript-eslint/eslint-plugin";
 export default [
   {
     ignores: [
+      "assets/**",
+      "build/**",
       "dist/**",
       "reference/**",
+      "third_party/**",
       "node_modules/**",
       ".cache/**",
       "**/*.cjs",

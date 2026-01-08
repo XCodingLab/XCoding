@@ -255,6 +255,7 @@ async function main() {
     return;
   }
 
+  const force = String(process.env.XCODING_FORCE_CODEX_SETUP || "").trim().toLowerCase() === "1";
   const platform = process.platform;
   const arch = process.arch;
   const exeName = isWindows(platform) ? "codex.exe" : "codex";
@@ -262,6 +263,18 @@ async function main() {
   const version = (process.env.CODEX_VERSION || "").trim() || readPinnedVersion();
   if (!version || version === "0.0.0") {
     usageAndExit("Missing pinned version. Set CODEX_VERSION or edit assets/codex/version.txt");
+  }
+
+  const outDir =
+    (process.env.CODEX_OUT_DIR && process.env.CODEX_OUT_DIR.trim()) ||
+    path.join(repoRoot(), "assets", "codex", "bin", platformArchDir(platform, arch));
+  const outPath = path.join(outDir, exeName);
+  fs.mkdirSync(outDir, { recursive: true });
+  if (!force && fs.existsSync(outPath)) {
+    ensureExecutable(outPath, platform);
+    console.log(`[fetch:codex] Already present: ${outPath}`);
+    console.log("[fetch:codex] Set XCODING_FORCE_CODEX_SETUP=1 to re-download.");
+    return;
   }
 
   const repo = (process.env.CODEX_REPO || "openai/codex").trim();
@@ -290,13 +303,6 @@ async function main() {
     const names = Array.isArray(release?.assets) ? release.assets.map((a) => String(a?.name || "")).filter(Boolean) : [];
     throw new Error(`release_asset_not_found:${platform}/${arch}\nassets:\n- ${names.join("\n- ")}`);
   }
-
-  const outDir =
-    (process.env.CODEX_OUT_DIR && process.env.CODEX_OUT_DIR.trim()) ||
-    path.join(repoRoot(), "assets", "codex", "bin", platformArchDir(platform, arch));
-  const outPath = path.join(outDir, exeName);
-
-  fs.mkdirSync(outDir, { recursive: true });
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xcoding-codex-"));
   const archivePath = path.join(tmpRoot, assetInfo.name);

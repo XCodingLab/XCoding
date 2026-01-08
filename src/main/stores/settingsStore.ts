@@ -20,7 +20,13 @@ export type UiLayout = NonNullable<AppSettings["ui"]["layout"]>;
 
 export const settings: AppSettings = {
   ui: { language: "en-US", layout: { explorerWidth: 180, chatWidth: 530, isExplorerVisible: true, isChatVisible: true } },
-  ai: { autoApplyAll: true, apiBase: "https://api.openai.com", apiKey: "", model: "gpt-4o-mini", codex: { prewarm: true } }
+  ai: {
+    autoApplyAll: true,
+    apiBase: "https://api.openai.com",
+    apiKey: "",
+    model: "gpt-4o-mini",
+    codex: { prewarm: app.isPackaged }
+  }
 };
 
 export function settingsPath() {
@@ -74,4 +80,3 @@ export function persistSettingsToDisk() {
     // ignore
   }
 }
-

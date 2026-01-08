@@ -140,6 +140,7 @@ export type Props = {
   projectRootPath?: string;
   onOpenUrl?: (url: string) => void;
   onOpenImage?: (absPathOrUrl: string) => void;
+  isActive?: boolean;
 };
 
 export function getTabLabel(p: string) {

@@ -212,6 +212,63 @@ declare global {
         onEvent: (listener: (payload: any) => void) => () => void;
         onRequest: (listener: (payload: any) => void) => () => void;
       };
+      claude: {
+        ensureStarted: (payload: {
+          slot: number;
+          projectRootPath?: string;
+          sessionId?: string | null;
+          permissionMode?: string;
+          forkSession?: boolean;
+        }) => Promise<{ ok: boolean; sessionId?: string | null; permissionMode?: string; reason?: string }>;
+        getStatus: (payload: { slot: number }) => Promise<{
+          ok: boolean;
+          status?: { state: "idle" | "starting" | "ready" | "exited" | "error"; error?: string };
+          slot?: number;
+          sessionId?: string | null;
+          permissionMode?: string;
+          reason?: string;
+        }>;
+        sendUserMessage: (payload: { slot: number; content: string }) => Promise<{ ok: boolean; reason?: string }>;
+        interrupt: (payload: { slot: number }) => Promise<{ ok: boolean; reason?: string }>;
+        close: (payload: { slot: number }) => Promise<{ ok: boolean; reason?: string }>;
+        setPermissionMode: (payload: { slot: number; mode: string }) => Promise<{ ok: boolean; reason?: string }>;
+        respondToolPermission: (payload: {
+          requestId: string;
+          behavior: "allow" | "deny";
+          updatedInput?: any;
+          updatedPermissions?: any;
+          interrupt?: boolean;
+        }) => Promise<{ ok: boolean; reason?: string }>;
+        historyList: (payload: { projectRootPath: string }) => Promise<{
+          ok: boolean;
+          sessions?: Array<{ sessionId: string; fileName?: string; updatedAtMs: number; preview?: string }>;
+          reason?: string;
+        }>;
+        sessionRead: (payload: { projectRootPath: string; sessionId: string }) => Promise<{ ok: boolean; thread?: any; reason?: string; debug?: any }>;
+        turnFileDiff: (payload: {
+          projectRootPath: string;
+          sessionId: string;
+          absPath: string;
+        }) => Promise<
+          | { ok: true; original: string; modified: string; backupName?: string; messageId?: string }
+          | { ok: false; reason: string; messageId?: string }
+        >;
+        mcpServerStatus: (payload: { slot: number }) => Promise<{ ok: boolean; servers?: Array<{ name: string; status: string }>; reason?: string }>;
+        forkSession: (payload: { slot: number; projectRootPath: string; sessionId: string; permissionMode?: string }) => Promise<{
+          ok: boolean;
+          sessionId?: string;
+          reason?: string;
+        }>;
+        latestSnapshotFiles: (payload: { projectRootPath: string; sessionId: string }) => Promise<{
+          ok: boolean;
+          files?: Array<{ absPath: string; backupName: string }>;
+          messageId?: string;
+          reason?: string;
+        }>;
+        revertFileFromBackup: (payload: { absPath: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;
+        onEvent: (listener: (payload: any) => void) => () => void;
+        onRequest: (listener: (payload: any) => void) => () => void;
+      };
       project: {
         readFile: (payload: { slot: number; path: string }) => Promise<{ ok: boolean; content?: string; reason?: string }>;
         writeFile: (payload: { slot: number; path: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;

@@ -1,8 +1,7 @@
-import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "./i18n";
-import TerminalView from "./TerminalView";
 import { CodexPanel } from "../agent/codex";
+import { ClaudePanel } from "../agent/claude";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -54,15 +53,13 @@ export default function ChatPanel({
   width,
   onClose,
   projectRootPath,
-  terminalScrollback = 1500,
   onOpenUrl,
   onOpenImage,
-  onOpenFile,
   agentView,
   setAgentView,
   allowedAgentViews,
-  agentCli,
-  updateAgentCli,
+  agentCli: _agentCli,
+  updateAgentCli: _updateAgentCli,
   aiConfig,
   setAiConfig,
   autoApplyAll,
@@ -93,18 +90,6 @@ export default function ChatPanel({
       active ? "" : "pointer-events-none opacity-0",
       "transition-opacity"
     ].join(" ");
-
-  const activeCli =
-    safeAgentView === "claude" ? { key: "claude" as const, label: t("claudeCode"), command: "claude", state: agentCli.claude } : null;
-
-  function resetCliSession(key: "claude" | "codex") {
-    const existing = key === "claude" ? agentCli.claude.sessionId : agentCli.codex.sessionId;
-    if (existing) void window.xcoding.terminal.dispose(existing);
-    updateAgentCli((prev) => ({
-      ...prev,
-      [key]: { tabId: `agent-${key}-${Date.now()}-${Math.random().toString(16).slice(2)}`, sessionId: undefined, hasStarted: false }
-    }));
-  }
 
   return (
     <aside
@@ -171,16 +156,6 @@ export default function ChatPanel({
           </div> : null}
         </div>
         <div className="flex items-center gap-1">
-          {activeCli ? (
-            <button
-              className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-              onClick={() => resetCliSession(activeCli.key)}
-              type="button"
-              title={t("newSession")}
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          ) : null}
           {safeAgentView === "chat" ? (
             <button
               className="rounded px-2 py-1 text-[11px] text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
@@ -235,39 +210,17 @@ export default function ChatPanel({
       {/* Keep all panes mounted; hide via opacity (NOT display:none) so Codex layout measurements stay correct. */}
       <div className="relative min-h-0 flex-1">
         <div className={paneClass(safeAgentView === "codex")}>
-          <CodexPanel slot={slot} projectRootPath={projectRootPath} onOpenUrl={onOpenUrl} onOpenImage={onOpenImage} />
+          <CodexPanel
+            slot={slot}
+            projectRootPath={projectRootPath}
+            onOpenUrl={onOpenUrl}
+            onOpenImage={onOpenImage}
+            isActive={safeAgentView === "codex"}
+          />
         </div>
 
         <div className={paneClass(safeAgentView === "claude")}>
-          <div className="h-full min-h-0 p-2">
-            {activeCli ? (
-              <TerminalView
-                key={activeCli.state.tabId}
-                tabId={activeCli.state.tabId}
-                sessionId={activeCli.state.sessionId}
-                onSessionId={(sessionId) => {
-                  updateAgentCli((prev) => ({
-                    ...prev,
-                    [activeCli.key]: { ...prev[activeCli.key], sessionId }
-                  }));
-                }}
-                initialCommand={activeCli.state.hasStarted ? undefined : activeCli.command}
-                onDidRunInitialCommand={() => {
-                  updateAgentCli((prev) => ({
-                    ...prev,
-                    [activeCli.key]: { ...prev[activeCli.key], hasStarted: true }
-                  }));
-                }}
-                isActive={safeAgentView === "claude"}
-                isPaused={false}
-                scrollback={terminalScrollback}
-                slot={slot}
-                projectRootPath={projectRootPath}
-                onOpenUrl={onOpenUrl}
-                onOpenFile={onOpenFile}
-              />
-            ) : null}
-          </div>
+          <ClaudePanel slot={slot} projectRootPath={projectRootPath} onOpenUrl={onOpenUrl} isActive={safeAgentView === "claude"} />
         </div>
 
         <div className={paneClass(safeAgentView === "chat")}>

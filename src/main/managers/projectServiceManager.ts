@@ -6,6 +6,7 @@ import path from "node:path";
 import type { ProjectServiceRequest, ProjectServiceRequestNoId, ProjectServiceResponse } from "../shared/projectServiceProtocol";
 import { broadcast } from "../app/windowManager";
 import { projectsState } from "../stores/projectsStore";
+import { resolveRunAsNodeExecutablePath } from "../shared/runAsNodeExecutable";
 
 export type ProjectServiceEntry = {
   child: ChildProcess;
@@ -25,7 +26,7 @@ export function ensureProjectService(projectId: string, projectPath: string) {
   if (existing && existing.child.exitCode === null) return existing;
 
   const servicePath = path.join(__dirname, "projectService.cjs");
-  const child = spawn(process.execPath, [servicePath], {
+  const child = spawn(resolveRunAsNodeExecutablePath(), [servicePath], {
     stdio: ["pipe", "pipe", "pipe", "ipc"],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
   });
@@ -169,4 +170,3 @@ export function sendToProjectService(projectId: string, payload: ProjectServiceR
     }
   });
 }
-

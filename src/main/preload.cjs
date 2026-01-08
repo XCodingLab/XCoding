@@ -137,6 +137,32 @@ contextBridge.exposeInMainWorld("xcoding", {
       return () => ipcRenderer.off("codex:request", wrapped);
     }
   },
+  claude: {
+    ensureStarted: (payload) => ipcRenderer.invoke("claude:ensureStarted", payload),
+    getStatus: (payload) => ipcRenderer.invoke("claude:getStatus", payload),
+    sendUserMessage: (payload) => ipcRenderer.invoke("claude:sendUserMessage", payload),
+    interrupt: (payload) => ipcRenderer.invoke("claude:interrupt", payload),
+    close: (payload) => ipcRenderer.invoke("claude:close", payload),
+    setPermissionMode: (payload) => ipcRenderer.invoke("claude:setPermissionMode", payload),
+    respondToolPermission: (payload) => ipcRenderer.invoke("claude:respondToolPermission", payload),
+    historyList: (payload) => ipcRenderer.invoke("claude:historyList", payload),
+    sessionRead: (payload) => ipcRenderer.invoke("claude:sessionRead", payload),
+    turnFileDiff: (payload) => ipcRenderer.invoke("claude:turnFileDiff", payload),
+    mcpServerStatus: (payload) => ipcRenderer.invoke("claude:mcpServerStatus", payload),
+    forkSession: (payload) => ipcRenderer.invoke("claude:forkSession", payload),
+    latestSnapshotFiles: (payload) => ipcRenderer.invoke("claude:latestSnapshotFiles", payload),
+    revertFileFromBackup: (payload) => ipcRenderer.invoke("claude:revertFileFromBackup", payload),
+    onEvent: (listener) => {
+      const wrapped = (_event, payload) => listener(payload);
+      ipcRenderer.on("claude:event", wrapped);
+      return () => ipcRenderer.off("claude:event", wrapped);
+    },
+    onRequest: (listener) => {
+      const wrapped = (_event, payload) => listener(payload);
+      ipcRenderer.on("claude:request", wrapped);
+      return () => ipcRenderer.off("claude:request", wrapped);
+    }
+  },
   project: {
     readFile: (payload) => ipcRenderer.invoke("project:fsReadFile", payload),
     writeFile: (payload) => ipcRenderer.invoke("project:fsWriteFile", payload),

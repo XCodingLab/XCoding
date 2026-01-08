@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { broadcast } from "../app/windowManager";
 import type { ProjectServiceRequestNoId, ProjectServiceResponse } from "../shared/projectServiceProtocol";
+import { resolveRunAsNodeExecutablePath } from "../shared/runAsNodeExecutable";
 
 type AiStaging = {
   patchId: string;
@@ -19,7 +20,7 @@ const aiChatSlotByRequestId = new Map<string, number>();
 function ensureAiService() {
   if (aiService && aiService.child.exitCode === null) return aiService;
   const servicePath = path.join(__dirname, "aiService.cjs");
-  const child = spawn(process.execPath, [servicePath], {
+  const child = spawn(resolveRunAsNodeExecutablePath(), [servicePath], {
     stdio: ["pipe", "pipe", "pipe", "ipc"],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
   });
@@ -202,4 +203,3 @@ export async function revertLast({
     return { ok: false as const, reason: e instanceof Error ? e.message : "revert_failed" };
   }
 }
-

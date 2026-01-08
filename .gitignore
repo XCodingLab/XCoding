@@ -31,3 +31,7 @@ helloagents
 # Dev-only codex binaries (do not commit)
 assets/codex/bin/**
 !assets/codex/bin/**/.gitkeep
+
+# Generated Claude Code bundle (do not commit)
+assets/claude-code/**
+!assets/claude-code/**/.gitkeep

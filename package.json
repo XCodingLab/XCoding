@@ -6,10 +6,11 @@
   "type": "module",
   "main": "dist/main/main.cjs",
   "scripts": {
-    "prebuild": "pnpm run setup:codex",
+    "prebuild": "pnpm run setup:codex && pnpm run setup:claude-code",
     "preinstall": "node scripts/ensure-pnpm.cjs",
     "postinstall": "node scripts/fix-node-pty-perms.cjs",
     "setup:codex": "node scripts/fetch-codex-binary.cjs",
+    "setup:claude-code": "node scripts/copy-claude-code.cjs",
     "dev": "concurrently -k \"vite\" \"pnpm run main:watch\" \"wait-on http://127.0.0.1:5173 file:dist/main/main.cjs && pnpm run electron:dev\"",
     "main:watch": "tsup --config tsup.config.ts --watch --onSuccess \"node scripts/copy-preload.cjs\"",
     "electron:dev": "node scripts/electron-dev.cjs .",
@@ -24,6 +25,8 @@
     "dist:mac": "pnpm build && electron-builder --mac dmg --publish never"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.1.73",
+    "@anthropic-ai/claude-code": "2.1.1",
     "@monaco-editor/react": "^4.7.0",
     "@types/node": "^25.0.3",
     "@vscode/ripgrep": "^1.17.0",
@@ -114,6 +117,10 @@
       {
         "from": "assets/codex",
         "to": "codex"
+      },
+      {
+        "from": "assets/claude-code",
+        "to": "claude-code"
       }
     ],
     "afterPack": "build/afterPack.cjs",
