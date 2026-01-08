@@ -11,6 +11,7 @@ type Props = {
   isBound: boolean;
   width?: number;
   onOpenFile: (relPath: string, line?: number, column?: number) => void;
+  onOpenGitDiff?: (relPath: string, mode: "working" | "staged") => void;
   onOpenFolder: () => void;
   onDeletedPaths?: (paths: string[]) => void;
 };
@@ -52,7 +53,7 @@ function parseGlobInput(raw: string): string[] {
     .filter(Boolean);
 }
 
-export default function ExplorerPanel({ slot, projectId, rootPath, isBound, width, onOpenFile, onOpenFolder, onDeletedPaths }: Props) {
+export default function ExplorerPanel({ slot, projectId, rootPath, isBound, width, onOpenFile, onOpenGitDiff, onOpenFolder, onDeletedPaths }: Props) {
   const { t } = useI18n();
   const [activeView, setActiveView] = useState<"explorer" | "search">("explorer");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -463,6 +464,7 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
               rootPath={rootPath}
               isVisible={activeView === "explorer"}
               onOpenFile={(rel) => onOpenFile(rel)}
+              onOpenGitDiff={onOpenGitDiff}
               onDeletedPaths={onDeletedPaths}
             />
           </div>

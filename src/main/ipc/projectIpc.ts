@@ -1,4 +1,4 @@
-import { clipboard, ipcMain } from "electron";
+import { clipboard, ipcMain, shell } from "electron";
 import type { ProjectServiceRequestNoId } from "../shared/projectServiceProtocol";
 import { sendToProjectService } from "../managers/projectServiceManager";
 import { getProjectForSlot } from "../stores/projectsStore";
@@ -46,6 +46,60 @@ export function registerProjectIpc() {
     const res = await forwardToProjectService(slot, { type: "fs:gitStatus", maxEntries });
     if (!res.ok) return res;
     return { ok: true, entries: (res.result as any)?.entries ?? {} };
+  });
+
+  ipcMain.handle("project:gitInfo", async (_event, { slot }: { slot: number }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitInfo" });
+    if (!res.ok) return res;
+    return { ok: true, ...(res.result as any) };
+  });
+
+  ipcMain.handle("project:gitChanges", async (_event, { slot, maxEntries }: { slot: number; maxEntries?: number }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitChanges", maxEntries });
+    if (!res.ok) return res;
+    return { ok: true, ...(res.result as any) };
+  });
+
+  ipcMain.handle("project:gitDiff", async (_event, { slot, path, mode }: { slot: number; path: string; mode: "working" | "staged" }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitDiff", path, mode });
+    if (!res.ok) return res;
+    return { ok: true, diff: String((res.result as any)?.diff ?? ""), truncated: Boolean((res.result as any)?.truncated) };
+  });
+
+  ipcMain.handle("project:gitFileDiff", async (_event, { slot, path, mode }: { slot: number; path: string; mode: "working" | "staged" }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitFileDiff", path, mode });
+    if (!res.ok) return res;
+    return {
+      ok: true,
+      original: String((res.result as any)?.original ?? ""),
+      modified: String((res.result as any)?.modified ?? ""),
+      truncated: Boolean((res.result as any)?.truncated),
+      isBinary: Boolean((res.result as any)?.isBinary)
+    };
+  });
+
+  ipcMain.handle("project:gitStage", async (_event, { slot, paths }: { slot: number; paths: string[] }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitStage", paths });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
+  ipcMain.handle("project:gitUnstage", async (_event, { slot, paths }: { slot: number; paths: string[] }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitUnstage", paths });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
+  ipcMain.handle("project:gitDiscard", async (_event, { slot, paths, includeUntracked }: { slot: number; paths: string[]; includeUntracked?: boolean }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitDiscard", paths, includeUntracked });
+    if (!res.ok) return res;
+    return { ok: true };
+  });
+
+  ipcMain.handle("project:gitCommit", async (_event, { slot, message, amend }: { slot: number; message: string; amend?: boolean }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:gitCommit", message, amend });
+    if (!res.ok) return res;
+    return { ok: true, commitHash: String((res.result as any)?.commitHash ?? "") };
   });
 
   ipcMain.handle(
@@ -258,6 +312,24 @@ export function registerProjectIpc() {
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: e instanceof Error ? e.message : "copy_failed" };
+    }
+  });
+
+  ipcMain.handle("os:openExternal", async (_event, { url }: { url: string }) => {
+    try {
+      const target = String(url ?? "").trim();
+      if (!target) return { ok: false, reason: "missing_url" };
+      let parsed: URL;
+      try {
+        parsed = new URL(target);
+      } catch {
+        return { ok: false, reason: "invalid_url" };
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, reason: "unsupported_protocol" };
+      await shell.openExternal(parsed.toString());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : "open_external_failed" };
     }
   });
 }

@@ -5,10 +5,20 @@ export type AiStatus = "idle" | "running" | "done";
 
 export type WorkspaceTab =
   | { id: string; type: "file"; title: string; path: string; dirty?: boolean; reveal?: { line: number; column: number; nonce: string } }
-  | { id: string; type: "preview"; title: string; url: string }
+  | { id: string; type: "preview"; title: string; url: string; draftUrl?: string }
   | { id: string; type: "image"; title: string; url: string }
   | { id: string; type: "markdown"; title: string; path: string }
-  | { id: string; type: "codexDiff"; title: string; diff: string };
+  | { id: string; type: "unifiedDiff"; title: string; diff: string; source?: "codex" }
+  | {
+      id: string;
+      type: "codexReviewDiff";
+      title: string;
+      threadId: string;
+      turnId: string;
+      files: Array<{ path: string; added: number; removed: number; kind?: string; diff: string }>;
+      activePath?: string;
+    }
+  | { id: string; type: "gitDiff"; title: string; path: string; mode: "working" | "staged" };
 
 export type DiffTab = { id: string; type: "diff"; title: string; path: string; stagedContent: string };
 
@@ -20,7 +30,7 @@ export type SlotUiState = {
   activePane: PaneId;
   panes: Record<PaneId, { tabs: AnyTab[]; activeTabId: string }>;
   terminalPanel: TerminalPanelState;
-  previewUi: { mode: "standard" | "preview" };
+  previewUi: { device: "desktop" | "phone" | "tablet" };
   workflowUi: { stage: WorkflowStage };
 
   agentView: "chat" | "claude" | "codex";
@@ -66,11 +76,11 @@ export type PreviewFocusInfo = {
   prevActivePane: PaneId;
 };
 
-export type WorkflowStage = "idea" | "auto" | "preview" | "develop";
+export type WorkflowStage = "idea" | "auto" | "preview" | "develop" | "review";
 
 export function normalizeWorkflowStage(raw: unknown): WorkflowStage {
   // 隐藏 idea/auto 阶段：UI 侧一律按 develop 处理（仅保留 develop/preview）。
-  if (raw === "preview" || raw === "develop") return raw;
+  if (raw === "preview" || raw === "develop" || raw === "review") return raw;
   return "develop";
 }
 
@@ -85,7 +95,7 @@ export function makeEmptySlotUiState(): SlotUiState {
       C: { tabs: [], activeTabId: "" }
     },
     terminalPanel: { isVisible: false, height: 260, activeTab: "terminal", terminals: [], viewIds: [], focusedView: 0 },
-    previewUi: { mode: "standard" },
+    previewUi: { device: "desktop" },
     workflowUi: { stage: "develop" },
     agentView: "codex",
     agentCli: {
@@ -104,7 +114,7 @@ export function makeEmptySlotUiState(): SlotUiState {
 
 export function workflowAllowsExternalAgents(stage: WorkflowStage) {
   // User confirmed: idea/auto must use built-in chat only; preview/develop can use external agents.
-  return stage === "preview" || stage === "develop";
+  return stage === "preview" || stage === "develop" || stage === "review";
 }
 
 export function getSlotProjectId(state: ProjectsState, slot: number) {

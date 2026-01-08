@@ -19,8 +19,8 @@ type Props = {
   onToggleExplorer?: () => void;
   onToggleChat?: () => void;
   onToggleTerminal?: () => void;
-  viewMode?: "develop" | "preview";
-  onViewModeChange?: (mode: "develop" | "preview") => void;
+  viewMode?: "develop" | "preview" | "review";
+  onViewModeChange?: (mode: "develop" | "preview" | "review") => void;
   showExplorerToggle?: boolean;
 
   // Project Switcher Props
@@ -348,6 +348,19 @@ export default function TitleBar({
               title={t("previewMode")}
             >
               {t("preview")}
+            </button>
+            <button
+              className={[
+                "rounded px-2 py-1 text-[11px]",
+                viewMode === "review"
+                  ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
+                  : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] hover:text-[var(--vscode-foreground)]"
+              ].join(" ")}
+              onClick={() => onViewModeChange("review")}
+              type="button"
+              title={t("reviewMode")}
+            >
+              {t("review")}
             </button>
           </div>
         ) : null}

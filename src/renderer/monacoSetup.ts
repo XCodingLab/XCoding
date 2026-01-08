@@ -3,6 +3,8 @@ import * as monaco from "monaco-editor";
 
 export const MONACO_DARK_THEME_NAME = "xcoding-dark";
 export const MONACO_LIGHT_THEME_NAME = "xcoding-light";
+// Back-compat: newer views expect a single theme name export.
+export const MONACO_THEME_NAME = MONACO_DARK_THEME_NAME;
 export const MONACO_URI_SCHEME = "xcoding";
 
 export function getMonacoThemeName(theme: "dark" | "light") {

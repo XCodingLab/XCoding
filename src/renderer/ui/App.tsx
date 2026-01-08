@@ -1,6 +1,7 @@
 import { type DragEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ExplorerPanel from "./ExplorerPanel";
 import ActivityBar from "./ActivityBar";
+import GitPanel from "./GitPanel";
 import AutoWorkspace from "./AutoWorkspace";
 import { I18nContext, type Language, messages } from "./i18n";
 import { UiThemeContext, type UiTheme } from "./UiThemeContext";
@@ -9,7 +10,6 @@ import IdeaWorkspace from "./IdeaWorkspace";
 import type { LayoutMode, PaneId, SplitIntent } from "./LayoutManager";
 import NewProjectWizardModal from "./NewProjectWizardModal";
 import ProjectChatPanel from "./ProjectChatPanel";
-import ProjectSidebar from "./ProjectSidebar";
 import ProjectWorkspaceMain from "./ProjectWorkspaceMain";
 import IdeSettingsModal from "./IdeSettingsModal";
 import type { TerminalPanelState } from "./TerminalPanel";
@@ -269,7 +269,14 @@ export default function App() {
   const activeProjectPath = activeProject?.path;
   const activeUi = slotUi[activeProjectSlot] ?? makeEmptySlotUiState();
   const activeWorkflowStage: WorkflowStage = activeUi.workflowUi?.stage ?? normalizeWorkflowStage(activeProject?.workflow?.stage);
-  const activeViewMode: "develop" | "preview" | null = activeWorkflowStage === "preview" ? "preview" : activeWorkflowStage === "develop" ? "develop" : null;
+  const activeViewMode: "develop" | "preview" | "review" | null =
+    activeWorkflowStage === "preview"
+      ? "preview"
+      : activeWorkflowStage === "review"
+        ? "review"
+        : activeWorkflowStage === "develop"
+          ? "develop"
+          : null;
   const isWorkflowPreview = activeWorkflowStage === "preview";
   const isActiveSlotBound = Boolean(activeProjectId);
   // 本期暂时隐藏内置 Chat（自研对话），保留 Claude Code（终端）与 Codex（app-server UI）。
@@ -662,7 +669,7 @@ export default function App() {
   const activePaneState = activeUi.panes[activeUi.activePane];
   const activePaneTab = activePaneState.tabs.find((t) => t.id === activePaneState.activeTabId) ?? activePaneState.tabs[0] ?? null;
   const activePreviewTab = activePaneTab && activePaneTab.type === "preview" ? activePaneTab : null;
-  const isPreviewFocus = Boolean(activePreviewTab && activeUi.previewUi?.mode === "preview");
+  const isPreviewFocus = Boolean(activePreviewTab);
   const effectiveLayout = {
     ...layout,
     isExplorerVisible: isWorkflowPreview || isPreviewFocus ? false : layout.isExplorerVisible,
@@ -736,7 +743,7 @@ export default function App() {
     if (current && current.slot === activeProjectSlot) {
       exitPreviewFocus(current, { restoreSelection: false });
     }
-  }, [activeProjectSlot, activePreviewTab?.id, activeUi.previewUi?.mode]);
+  }, [activeProjectSlot, activePreviewTab?.id]);
 
   function persistLayout(next: typeof layout) {
     if (layoutPersistTimerRef.current != null) window.clearTimeout(layoutPersistTimerRef.current);
@@ -1009,35 +1016,51 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { title?: string; diff?: string; tabId?: string } | undefined;
+      const detail = (e as CustomEvent).detail as
+        | {
+            title?: string;
+            diff?: string;
+            tabId?: string;
+            reviewFiles?: Array<{ path: string; added: number; removed: number; kind?: string; diff: string }>;
+            threadId?: string;
+            turnId?: string;
+          }
+        | undefined;
       const diff = typeof detail?.diff === "string" ? detail.diff : "";
-      if (!diff) return;
-      const title = String(detail?.title ?? "Codex Diff");
-      const stableId = typeof detail?.tabId === "string" && detail.tabId.trim() ? `tab-codex-diff:${detail.tabId.trim()}` : "";
+      const reviewFiles = Array.isArray(detail?.reviewFiles) ? detail!.reviewFiles : [];
+      const threadId = typeof detail?.threadId === "string" ? detail.threadId : "";
+      const turnId = typeof detail?.turnId === "string" ? detail.turnId : "";
+      const canUseReviewTab = reviewFiles.length > 0 && threadId && turnId;
+      if (!canUseReviewTab && !diff.trim()) return;
+
+      const title = String(detail?.title ?? (canUseReviewTab ? "Review changes" : "Codex Diff"));
+      const stableKey = typeof detail?.tabId === "string" && detail.tabId.trim() ? detail.tabId.trim() : "";
+      const stableId = stableKey ? `tab-codex-diff:${stableKey}` : "";
+      const id = stableId || `tab-codex-diff-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const nextTab: AnyTab = canUseReviewTab
+        ? { id, type: "codexReviewDiff", title, threadId, turnId, files: reviewFiles, activePath: reviewFiles[0]?.path }
+        : { id, type: "unifiedDiff", title, diff, source: "codex" };
       updateSlot(activeProjectSlot, (s) => {
         const pane = s.activePane;
         if (stableId) {
           // Reuse the same tab for the same logical diff (e.g. "Review") instead of opening unlimited tabs.
           for (const p of ["A", "B", "C"] as const) {
-            const existing = s.panes[p].tabs.find((t) => t.type === "codexDiff" && t.id === stableId) ?? null;
+            const existing = s.panes[p].tabs.find((t) => t.id === stableId && (t.type === "unifiedDiff" || t.type === "codexReviewDiff")) ?? null;
             if (existing) {
               const nextPanes: typeof s.panes = { ...s.panes };
               // Update tab content in-place (copy-on-write for tabs array).
               nextPanes[p] = {
                 ...nextPanes[p],
-                tabs: nextPanes[p].tabs.map((t) => (t.type === "codexDiff" && t.id === stableId ? { ...t, title, diff } : t)),
+                tabs: nextPanes[p].tabs.map((t) => (t.id === stableId ? nextTab : t)),
                 activeTabId: stableId
               };
               return { ...s, panes: nextPanes, activePane: p };
             }
           }
-          const next: AnyTab = { id: stableId, type: "codexDiff", title, diff };
-          return { ...s, panes: { ...s.panes, [pane]: { tabs: [...s.panes[pane].tabs, next], activeTabId: stableId } } };
+          return { ...s, panes: { ...s.panes, [pane]: { tabs: [...s.panes[pane].tabs, nextTab], activeTabId: stableId } } };
         }
 
-        const id = `tab-codex-diff-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const next: AnyTab = { id, type: "codexDiff", title, diff };
-        return { ...s, panes: { ...s.panes, [pane]: { tabs: [...s.panes[pane].tabs, next], activeTabId: id } } };
+        return { ...s, panes: { ...s.panes, [pane]: { tabs: [...s.panes[pane].tabs, nextTab], activeTabId: id } } };
       });
     };
     window.addEventListener("xcoding:openCodexDiff", handler as any);
@@ -1121,6 +1144,27 @@ export default function App() {
       ...s,
       panes: { ...s.panes, [s.activePane]: { tabs: [...s.panes[s.activePane].tabs, next], activeTabId: id } }
     }));
+  }
+
+  async function openGitDiff(path: string, mode: "working" | "staged") {
+    const relPath = String(path ?? "").trim().replace(/^([/\\])+/, "").replace(/[\\]+/g, "/");
+    if (!relPath) return;
+    if (activeProjectId) ensureProjectStage("review");
+
+    const stableId = `tab-git-diff:${mode}:${relPath}`;
+    const title = `${relPath.split("/").pop() ?? relPath} (${mode === "staged" ? "staged" : "working"})`;
+    updateSlot(activeProjectSlot, (s) => {
+      for (const p of ["A", "B", "C"] as const) {
+        const existing = s.panes[p].tabs.find((t) => t.type === "gitDiff" && t.id === stableId) ?? null;
+        if (existing) {
+          return { ...s, activePane: p, panes: { ...s.panes, [p]: { ...s.panes[p], activeTabId: existing.id } } };
+        }
+      }
+
+      const pane = s.activePane;
+      const next: AnyTab = { id: stableId, type: "gitDiff", title, path: relPath, mode };
+      return { ...s, panes: { ...s.panes, [pane]: { tabs: [...s.panes[pane].tabs, next], activeTabId: stableId } } };
+    });
   }
 
   function closeTab(pane: PaneId, tabId: string) {
@@ -1288,16 +1332,16 @@ export default function App() {
     }
     if (changedSlots.length === 0) return;
 
-    const loadSlotWorkflowStage = (slot: number, projectId?: string) => {
-      if (!projectId) return null;
-      try {
-        const raw = localStorage.getItem(`xcoding.workflow.stage.${slot}.${projectId}`);
-        if (raw === "preview" || raw === "develop") return raw as WorkflowStage;
-      } catch {
-        // ignore
-      }
-      return null;
-    };
+      const loadSlotWorkflowStage = (slot: number, projectId?: string) => {
+        if (!projectId) return null;
+        try {
+          const raw = localStorage.getItem(`xcoding.workflow.stage.${slot}.${projectId}`);
+          if (raw === "preview" || raw === "develop" || raw === "review") return raw as WorkflowStage;
+        } catch {
+          // ignore
+        }
+        return null;
+      };
 
     setSlotUi((prevUi) => {
       let mutated = false;
@@ -1451,9 +1495,9 @@ export default function App() {
     }
   }
 
-  async function setProjectViewMode(mode: "develop" | "preview") {
+  async function setProjectViewMode(mode: "develop" | "preview" | "review") {
     if (!activeProjectId) return;
-    const stage: WorkflowStage = mode === "preview" ? "preview" : "develop";
+    const stage: WorkflowStage = mode === "preview" ? "preview" : mode === "review" ? "review" : "develop";
     persistSlotWorkflowStage(activeProjectSlot, activeProjectId, stage);
     appliedWorkflowStageBySlotRef.current[activeProjectSlot] = stage;
     updateSlot(activeProjectSlot, (s) => ({ ...s, workflowUi: { stage } }));
@@ -1595,32 +1639,49 @@ export default function App() {
               <>
                 {effectiveLayout.isExplorerVisible ? (
                   <div className="flex min-w-0 shrink-0 flex-col bg-glass-bg backdrop-blur-lg border-r border-glass-border">
-                    <ExplorerPanel
-                      slot={activeProjectSlot}
-                      projectId={activeProjectId}
-                      rootPath={activeProjectPath}
-                      isBound={isActiveSlotBound}
-                      width={layout.explorerWidth}
-                      onOpenFolder={() => void openFolderIntoSlot(activeProjectSlot)}
-                      onOpenFile={openFile}
-                      onDeletedPaths={(paths) => {
-                        updateSlot(activeProjectSlot, (s) => {
-                          const nextPanes: typeof s.panes = { ...s.panes };
-                          (Object.keys(nextPanes) as Array<keyof typeof nextPanes>).forEach((pane) => {
-                            const p = nextPanes[pane];
-                            const filtered = p.tabs.filter((t2) => {
-                              if (t2.type === "file" || t2.type === "diff") {
-                                return !paths.some((deleted) => (deleted.endsWith("/") ? t2.path.startsWith(deleted) : t2.path === deleted));
-                              }
-                              return true;
+                    {activeWorkflowStage === "review" ? (
+                      <GitPanel
+                        slot={activeProjectSlot}
+                        projectId={activeProjectId}
+                        rootPath={activeProjectPath}
+                        isBound={isActiveSlotBound}
+                        width={layout.explorerWidth}
+                        onOpenFolder={() => void openFolderIntoSlot(activeProjectSlot)}
+                        onOpenDiff={(relPath, mode) => void openGitDiff(relPath, mode)}
+                        onOpenFile={(relPath) => {
+                          ensureProjectStage("develop");
+                          openFile(relPath);
+                        }}
+                      />
+                    ) : (
+                      <ExplorerPanel
+                        slot={activeProjectSlot}
+                        projectId={activeProjectId}
+                        rootPath={activeProjectPath}
+                        isBound={isActiveSlotBound}
+                        width={layout.explorerWidth}
+                        onOpenFolder={() => void openFolderIntoSlot(activeProjectSlot)}
+                        onOpenFile={openFile}
+                        onOpenGitDiff={(relPath, mode) => void openGitDiff(relPath, mode)}
+                        onDeletedPaths={(paths) => {
+                          updateSlot(activeProjectSlot, (s) => {
+                            const nextPanes: typeof s.panes = { ...s.panes };
+                            (Object.keys(nextPanes) as Array<keyof typeof nextPanes>).forEach((pane) => {
+                              const p = nextPanes[pane];
+                              const filtered = p.tabs.filter((t2) => {
+                                if (t2.type === "file" || t2.type === "diff") {
+                                  return !paths.some((deleted) => (deleted.endsWith("/") ? t2.path.startsWith(deleted) : t2.path === deleted));
+                                }
+                                return true;
+                              });
+                              const activeStillExists = filtered.some((t2) => t2.id === p.activeTabId);
+                              nextPanes[pane] = { tabs: filtered, activeTabId: activeStillExists ? p.activeTabId : filtered[0]?.id ?? "" };
                             });
-                            const activeStillExists = filtered.some((t2) => t2.id === p.activeTabId);
-                            nextPanes[pane] = { tabs: filtered, activeTabId: activeStillExists ? p.activeTabId : filtered[0]?.id ?? "" };
+                            return { ...s, panes: nextPanes };
                           });
-                          return { ...s, panes: nextPanes };
-                        });
-                      }}
-                    />
+                        }}
+                      />
+                    )}
                   </div>
                 ) : null}
 
@@ -1668,6 +1729,7 @@ export default function App() {
                     activeProjectSlot={activeProjectSlot}
                     activeProjectPath={activeProjectPath}
                     isActiveSlotBound={isActiveSlotBound}
+                    workflowStage={activeWorkflowStage}
                     recentProjects={recentProjects}
                     openFolderIntoSlot={openFolderIntoSlot}
                     bindProjectIntoSlot={bindProjectIntoSlot}

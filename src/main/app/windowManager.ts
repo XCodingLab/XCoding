@@ -9,6 +9,44 @@ export const activeSlotByWindowId = new Map<number, number>();
 // Track "single project windows" so we can route global hotkeys to the correct window.
 export const singleSlotByWindowId = new Map<number, number>();
 
+const cspInstalledSessions = new WeakSet<Electron.Session>();
+
+function installMainWindowCsp(win: BrowserWindow) {
+  // Dev server relies on inline scripts (Vite/React refresh preamble). Enforcing strict CSP in dev breaks startup.
+  // Electron's CSP warning is mainly relevant for packaged apps; we enforce CSP only when packaged.
+  if (!app.isPackaged) return;
+
+  const session = win.webContents.session;
+  if (cspInstalledSessions.has(session)) return;
+  cspInstalledSessions.add(session);
+
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: local-file: https: http:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "worker-src 'self' blob:",
+    "frame-src 'self'"
+  ].join("; ");
+
+  session.webRequest.onHeadersReceived((details, callback) => {
+    const url = details.url || "";
+    const isMainUi = url.startsWith("file://");
+    if (!isMainUi) {
+      callback({ cancel: false, responseHeaders: details.responseHeaders });
+      return;
+    }
+
+    const responseHeaders = { ...(details.responseHeaders ?? {}) };
+    responseHeaders["Content-Security-Policy"] = [csp];
+    callback({ cancel: false, responseHeaders });
+  });
+}
+
 export function broadcast(channel: string, payload: unknown) {
   for (const win of windowsById.values()) {
     try {
@@ -91,6 +129,8 @@ export function createWindow({
     }
   });
 
+  installMainWindowCsp(win);
+
   windowsById.set(win.id, win);
   if (!activeSlotByWindowId.has(win.id)) activeSlotByWindowId.set(win.id, 1);
 
@@ -117,4 +157,3 @@ export function createWindow({
   if (!mainWindow) mainWindow = win;
   return win;
 }
-

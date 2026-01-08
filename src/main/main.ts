@@ -27,6 +27,10 @@ try {
   // ignore
 }
 
+// In dev, Electron prints security warnings for any renderer that loads a page without CSP
+// (e.g. BrowserView previewing arbitrary websites). These warnings do not appear once packaged.
+if (!app.isPackaged) process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
+
 const DEV_SERVER_URL = "http://127.0.0.1:5173";
 
 // Ensure only one IDE instance runs at a time.

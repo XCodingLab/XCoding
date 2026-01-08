@@ -16,6 +16,7 @@ type Props = {
   projectId?: string;
   rootPath?: string;
   onOpenFile: (relPath: string) => void;
+  onOpenGitDiff?: (relPath: string, mode: "working" | "staged") => void;
   onDeletedPaths?: (paths: string[]) => void;
   isVisible?: boolean;
 };
@@ -56,13 +57,18 @@ function sortEntries(entries: FsEntry[]) {
   });
 }
 
-export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, onDeletedPaths, isVisible = true }: Props) {
+export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, onOpenGitDiff, onDeletedPaths, isVisible = true }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
   const [cache, setCache] = useState<Record<string, NodeState>>({});
   const [isUnbound, setIsUnbound] = useState(false);
   const [selectedRel, setSelectedRel] = useState<string>("");
   const [gitStatus, setGitStatus] = useState<Record<string, string>>({});
+  const gitMetaRef = useRef<{ staged: Set<string>; unstaged: Set<string>; untracked: Set<string> }>({
+    staged: new Set(),
+    unstaged: new Set(),
+    untracked: new Set()
+  });
   const [menu, setMenu] = useState<ContextMenuState>({ isOpen: false });
   const [inlineEdit, setInlineEdit] = useState<InlineEditState>({ mode: "none" });
   const inlineInputRef = useRef<HTMLInputElement | null>(null);
@@ -93,9 +99,14 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
 
   async function refreshGitStatus() {
     if (!isVisible) return;
-    const res = await window.xcoding.project.gitStatus({ slot, maxEntries: 50000 });
+    const res = await window.xcoding.project.gitChanges({ slot, maxEntries: 50000 });
     if (!res.ok) return;
-    setGitStatus(res.entries ?? {});
+    setGitStatus(res.statusByPath ?? {});
+    gitMetaRef.current = {
+      staged: new Set(res.staged ?? []),
+      unstaged: new Set(res.unstaged ?? []),
+      untracked: new Set(res.untracked ?? [])
+    };
   }
 
   function refreshVisibleDirs() {
@@ -114,6 +125,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
     setExpanded(new Set([""]));
     setSelectedRel("");
     setGitStatus({});
+    gitMetaRef.current = { staged: new Set(), unstaged: new Set(), untracked: new Set() };
     setMenu({ isOpen: false });
     setInlineEdit({ mode: "none" });
     void loadDir("");
@@ -432,6 +444,19 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
           const rowTextClass = row.ignored ? "text-[var(--vscode-descriptionForeground)] opacity-70" : "text-[var(--vscode-sideBar-foreground)]";
           const git = gitStatus[rel] ?? "";
 
+          const gitBadgeClass =
+            git === "?"
+              ? "bg-sky-600/40 text-sky-200"
+              : git === "A"
+                ? "bg-emerald-600/40 text-emerald-200"
+                : git === "D"
+                  ? "bg-red-600/40 text-red-200"
+                  : git === "U"
+                    ? "bg-purple-600/40 text-purple-200"
+                    : git === "R" || git === "C"
+                      ? "bg-blue-600/40 text-blue-200"
+                      : "bg-amber-600/40 text-amber-200";
+
           return (
             <button
               key={rel}
@@ -502,9 +527,29 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
                   <span
                     className={[
                       "rounded px-1 py-0.5 text-[10px] leading-none",
-                      git.includes("?") ? "bg-sky-600/40 text-sky-200" : git.includes("A") ? "bg-emerald-600/40 text-emerald-200" : git.includes("D") ? "bg-red-600/40 text-red-200" : "bg-amber-600/40 text-amber-200"
+                      gitBadgeClass,
+                      onOpenGitDiff ? "cursor-pointer" : ""
                     ].join(" ")}
                     title={`Git: ${git}`}
+                    role={onOpenGitDiff ? "button" : undefined}
+                    tabIndex={onOpenGitDiff ? 0 : undefined}
+                    onClick={(e2) => {
+                      if (!onOpenGitDiff) return;
+                      e2.preventDefault();
+                      e2.stopPropagation();
+                      const meta = gitMetaRef.current;
+                      const mode: "working" | "staged" = meta.unstaged.has(rel) || meta.untracked.has(rel) ? "working" : meta.staged.has(rel) ? "staged" : "working";
+                      onOpenGitDiff(rel, mode);
+                    }}
+                    onKeyDown={(e2) => {
+                      if (!onOpenGitDiff) return;
+                      if (e2.key !== "Enter") return;
+                      e2.preventDefault();
+                      e2.stopPropagation();
+                      const meta = gitMetaRef.current;
+                      const mode: "working" | "staged" = meta.unstaged.has(rel) || meta.untracked.has(rel) ? "working" : meta.staged.has(rel) ? "staged" : "working";
+                      onOpenGitDiff(rel, mode);
+                    }}
                   >
                     {git}
                   </span>
