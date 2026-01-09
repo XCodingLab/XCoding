@@ -1,4 +1,4 @@
-// 主题应用：将主进程解析后的主题包数据应用到 CSS Variables、Monaco 与全局标识上。
+// Theme application: apply the main-process-resolved theme pack data to CSS variables, Monaco, and global identifiers.
 import { monaco } from "../../monacoSetup";
 import type { ResolvedThemePack } from "./types";
 

@@ -1,4 +1,4 @@
-// 渲染端主题类型：与主进程 themes IPC 返回结构保持一致。
+// Renderer theme types: kept in sync with the main-process `themes` IPC payloads.
 export type ThemeAppearance = "dark" | "light";
 
 export type ThemePackSummary = {
@@ -24,4 +24,3 @@ export type ResolvedThemePack = {
   monacoThemeData?: MonacoThemeData;
   extraCssText?: string;
 };
-
