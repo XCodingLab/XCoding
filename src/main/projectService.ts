@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { FSWatcher } from "chokidar";
-import ts from "typescript";
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter, type MessageConnection } from "vscode-jsonrpc/node";
 import type { Diagnostic } from "vscode-languageserver-protocol";
 import type { LspLanguage, ProjectServiceRequest, ProjectServiceResponse } from "./shared/projectServiceProtocol";
@@ -105,6 +104,7 @@ let gitChangesCache:
 let rgPath: string | null = null;
 let rgChecked = false;
 let chokidarModule: typeof import("chokidar") | null = null;
+let typescriptModule: typeof import("typescript") | null = null;
 
 type LspServer = {
   language: LspLanguage;
@@ -786,6 +786,15 @@ function ensureChokidar(): typeof import("chokidar") {
   return chokidarModule;
 }
 
+function ensureTypeScript(): typeof import("typescript") {
+  if (typescriptModule) return typescriptModule;
+  // Resolve from the app root so it works in both dev and packaged (asar) builds.
+  // dist/main/projectService.cjs -> app root package.json (../..)
+  const req = createRequire(path.join(__dirname, "..", "..", "package.json"));
+  typescriptModule = req("typescript") as typeof import("typescript");
+  return typescriptModule;
+}
+
 function ensureWatcherStarted() {
   if (!root) throw new Error("not_initialized");
   if (watcher) return;
@@ -858,6 +867,7 @@ process.on("message", (msg: RequestMessage) => {
     }
 
     if (msg.type === "lang:ts:diagnostics") {
+      const ts = ensureTypeScript();
       // Lightweight TS diagnostics: only parse+syntax (no project-wide typecheck).
       const fileName = msg.relPath.replace(/[\\]+/g, "/");
       const transpile = ts.transpileModule(msg.content, {

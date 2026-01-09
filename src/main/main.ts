@@ -198,9 +198,18 @@ app.whenReady().then(() => {
   broadcastDetachedSlots();
 
   if (settings.ai.codex.prewarm) {
-    void ensureCodexBridge()
-      .ensureStarted()
-      .catch(() => void 0);
+    const schedulePrewarm = () => {
+      // Delay until after the window is usable to reduce cold-start peak memory.
+      setTimeout(() => {
+        if (win.isDestroyed()) return;
+        void ensureCodexBridge()
+          .ensureStarted()
+          .catch(() => void 0);
+      }, 1500);
+    };
+
+    if (win.webContents.isLoading()) win.webContents.once("did-finish-load", schedulePrewarm);
+    else schedulePrewarm();
   }
 
   app.on("activate", () => {

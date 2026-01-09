@@ -215,12 +215,17 @@ export default function ChatPanel({
             projectRootPath={projectRootPath}
             onOpenUrl={onOpenUrl}
             onOpenImage={onOpenImage}
-            isActive={safeAgentView === "codex"}
+            isActive={safeAgentView === "codex" && isVisible}
           />
         </div>
 
         <div className={paneClass(safeAgentView === "claude")}>
-          <ClaudePanel slot={slot} projectRootPath={projectRootPath} onOpenUrl={onOpenUrl} isActive={safeAgentView === "claude"} />
+          <ClaudePanel
+            slot={slot}
+            projectRootPath={projectRootPath}
+            onOpenUrl={onOpenUrl}
+            isActive={safeAgentView === "claude" && isVisible}
+          />
         </div>
 
         <div className={paneClass(safeAgentView === "chat")}>
