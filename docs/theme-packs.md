@@ -1,36 +1,36 @@
-# 主题包（Theme Packs）
+# Theme Packs
 
-本项目支持“主题包”机制：一个主题包对应一个文件夹，放入应用数据目录后即可在设置中下拉选择并生效。
+XCoding supports **Theme Packs**: each theme pack is a folder. Drop it into the app data directory and it will appear in Settings for selection.
 
 ---
 
-## 1. 主题目录位置
+## 1. Theme Directory
 
-主题包目录位于：
+Theme packs live at:
 
 ```
 userData/themes/
 ```
 
-在应用内可通过 **设置 → 打开主题目录** 按钮直接打开该目录。
+In the app, you can open it via **Settings → Open Themes Folder**.
 
 ---
 
-## 2. 主题包结构
+## 2. Theme Pack Structure
 
-每个主题包一个文件夹，至少包含 `theme.json`：
+Each theme pack is one folder and must contain at least `theme.json`:
 
 ```
 themes/<themeId>/
   theme.json
-  theme.css        # 可选
-  assets/          # 可选（字体/图片等）
+  theme.css        # optional
+  assets/          # optional (fonts/images/etc.)
 ```
 
-### 2.1 `theme.json`（VS Code 风格）
+### 2.1 `theme.json` (VS Code style)
 
-`theme.json` 采用 VS Code Color Theme 的 JSON 结构（常见字段：`name/type/colors/tokenColors`）。
-示例（最小示例，仅展示关键字段）：
+`theme.json` follows VS Code Color Theme JSON structure (common fields: `name/type/colors/tokenColors`).
+Example (minimal):
 
 ```json
 {
@@ -45,18 +45,18 @@ themes/<themeId>/
 }
 ```
 
-### 2.2 颜色映射规则
+### 2.2 Color Mapping
 
-`colors` 中的键会自动映射为 CSS Variables：
+Keys in `colors` are mapped to CSS variables:
 
 - `editor.background` → `--vscode-editor-background`
 - `list.activeSelectionBackground` → `--vscode-list-activeSelectionBackground`
 
-也就是说，只要你的主题是标准 VS Code 的 `colors` 字段，本项目 UI 会按 `--vscode-*` Token 进行覆盖。
+As long as your theme uses standard VS Code `colors`, XCoding UI will override via `--vscode-*` tokens.
 
-### 2.3 可选字段：`css`
+### 2.3 Optional: `css`
 
-你可以在 `theme.json` 中添加非 VS Code 标准字段 `css`，用于加载额外 CSS（例如 `@font-face` / 细节覆盖）：
+You can add a non-standard field `css` to load extra CSS (e.g. `@font-face`, fine-grained overrides):
 
 ```json
 {
@@ -67,14 +67,14 @@ themes/<themeId>/
 }
 ```
 
-注意：
-- 只允许引用主题目录内部的相对路径资源（例如 `url("./assets/font.ttf")`）
-- 远程/危险 URL（`http/https/data/file/javascript` 等）会被忽略
-- 为避免主题包拉取外部资源，`@import` 会被移除
+Notes:
+- Only relative paths inside the theme folder are allowed (e.g. `url("./assets/font.ttf")`)
+- Remote/unsafe URLs (`http/https/data/file/javascript`, etc.) are ignored
+- `@import` is stripped to prevent external resource loading
 
-### 2.4 可选字段：`cssVars`
+### 2.4 Optional: `cssVars`
 
-如需覆盖非 VS Code 的额外变量，可使用 `cssVars`：
+For additional non-VSCode variables, use `cssVars`:
 
 ```json
 {
@@ -90,37 +90,38 @@ themes/<themeId>/
 
 ---
 
-## 3. 内置主题
+## 3. Built-in Themes
 
-应用内置一个默认主题包（不可删除；如目录缺失会自动重建）：
-- `builtin-classic`（默认）
+XCoding ships with a default theme pack (cannot be deleted; it will be recreated automatically if missing):
+- `builtin-classic` (default)
 
-另外，应用会在首次初始化主题目录时写入一个“可编辑”的候补主题包（位于 `themes/` 目录内，可自行修改/删除）：
-- `builtin-dark`（Aurora Dark）
-
----
-
-## 4. 通过 ZIP 导入（推荐）
-
-设置页支持直接导入 `.zip` 主题包：
-
-1. 打开 **设置 → 导入主题包**
-2. 选择一个 `.zip` 文件
-3. 如检测到同名主题目录，应用会提示是否覆盖
-4. 导入成功后，主题会出现在下拉列表中（可选择立即切换）
-
-支持的 zip 结构（最小兼容）：
-- **单顶层目录（推荐）**：`<themeId>/theme.json`
-- **无顶层目录**：`theme.json` 位于 zip 根部（`themeId` 取 zip 文件名）
+On first initialization, XCoding also writes an editable optional theme pack under `themes/` (you can edit/delete it):
+- `builtin-dark` (Aurora Dark)
 
 ---
 
-## 5. 快速验证步骤（建议）
+## 4. Import via ZIP (Recommended)
 
-1. 打开 **设置 → 打开主题目录**，定位到 `userData/themes/`
-2. 将示例主题复制进去（仓库内示例：`docs/examples/theme-packs/example-dark/`）
-3. 回到设置页，在“主题”下拉选择新主题并观察：
-   - UI 配色即时变化
-   - Monaco 编辑器主题即时变化
-   - Terminal 颜色即时变化
-4. 删除该主题目录后重启/重新打开设置，应用应自动回退到 `builtin-classic`（不应白屏）
+Settings supports importing a `.zip` theme pack:
+
+1. Open **Settings → Import Theme Pack**
+2. Select a `.zip` file
+3. If a theme with the same id already exists, you will be prompted to replace it
+4. After import, the theme appears in the dropdown (you can switch immediately)
+
+Supported zip layouts (minimal compatibility):
+- **Single top-level directory (recommended)**: `<themeId>/theme.json`
+- **No top-level directory**: `theme.json` at the zip root (`themeId` falls back to zip file name)
+
+---
+
+## 5. Quick Verification
+
+1. Open **Settings → Open Themes Folder**, locate `userData/themes/`
+2. Copy the example theme pack from `docs/examples/theme-packs/example-dark/`
+3. In Settings, select the new theme and verify:
+   - UI colors change immediately
+   - Monaco editor theme updates
+   - Terminal colors update
+4. Delete the theme folder and restart / reopen Settings: the app should fall back to `builtin-classic` (no blank screen)
+

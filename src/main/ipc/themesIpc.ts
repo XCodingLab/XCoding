@@ -1,4 +1,4 @@
-// 主题 IPC：向渲染进程提供主题包列表与解析后的主题数据，并提供打开主题目录的入口。
+// Themes IPC: provides theme pack listings and resolved theme data to the renderer, plus helpers for opening the themes folder.
 import { dialog, ipcMain, shell } from "electron";
 import { getWindowFromEvent } from "../app/windowManager";
 import {

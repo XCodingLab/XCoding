@@ -1,5 +1,5 @@
-// 主题包管理：扫描 userData/themes 下的主题目录，并解析 VS Code 风格的 theme.json。
-// 主进程负责校验与解析与回退，渲染进程只接收受控的结构化主题数据并应用。
+// Theme pack manager: scans `userData/themes` and parses VS Code-style `theme.json`.
+// The main process validates/parses/falls back; the renderer only receives controlled, structured theme data to apply.
 import { app } from "electron";
 import fs from "node:fs";
 import path from "node:path";
@@ -460,7 +460,7 @@ function resolveWithinDir(dir: string, rel: string) {
   const relToDir = path.relative(dir, abs);
   if (!relToDir || relToDir.startsWith("..") || path.isAbsolute(relToDir)) return null;
 
-  // 防止通过符号链接逃逸主题目录（仅在目标存在时校验 realpath）。
+  // Prevent escaping the theme directory via symlinks (validate realpath only when the target exists).
   try {
     const realDir = fs.realpathSync(dir);
     const realAbs = fs.realpathSync(abs);
@@ -485,7 +485,7 @@ function rewriteCssUrlsToFile(cssText: string, themeDir: string) {
 }
 
 function stripCssImports(cssText: string) {
-  // 主题包禁止拉取远程 CSS：移除 @import（即使是相对路径也不需要，避免复杂度与风险）。
+  // Theme packs must not load external CSS: strip @import (even relative imports are unnecessary and add risk/complexity).
   return cssText.replace(
     /@import\s+(?:url\(\s*(?:'[^']+'|"[^"]+"|[^)\s;]+)\s*\)|'[^']+'|"[^"]+")[^;]*;/gi,
     ""

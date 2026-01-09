@@ -196,7 +196,7 @@ export default function TerminalView({
     } catch {
       // ignore
     }
-    // 依赖 themePackId：终端配色读取 CSS Variables，切换同一明暗外观的不同主题包时也需要触发刷新。
+    // Depends on themePackId: terminal colors are derived from CSS variables, so switching packs with the same appearance should still refresh.
   }, [theme, themePackId]);
 
   function flushWriteBuffer() {
