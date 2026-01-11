@@ -19,6 +19,7 @@ type Props = {
 
   projectRootPath?: string;
   terminalScrollback?: number;
+  onOpenTerminalAndRun?: (command: string, options?: { title?: string }) => void;
   onOpenUrl: (url: string) => void;
   onOpenImage: (absPathOrUrl: string) => void;
   onOpenFile: (relPath: string, line?: number, column?: number) => void;
@@ -53,8 +54,10 @@ export default function ChatPanel({
   width,
   onClose,
   projectRootPath,
+  onOpenTerminalAndRun,
   onOpenUrl,
   onOpenImage,
+  onOpenFile,
   agentView,
   setAgentView,
   allowedAgentViews,
@@ -220,7 +223,14 @@ export default function ChatPanel({
         </div>
 
         <div className={paneClass(safeAgentView === "claude")}>
-          <ClaudePanel slot={slot} projectRootPath={projectRootPath} onOpenUrl={onOpenUrl} isActive={safeAgentView === "claude"} />
+          <ClaudePanel
+            slot={slot}
+            projectRootPath={projectRootPath}
+            onOpenUrl={onOpenUrl}
+            onOpenFile={onOpenFile}
+            onOpenTerminalAndRun={onOpenTerminalAndRun}
+            isActive={safeAgentView === "claude"}
+          />
         </div>
 
         <div className={paneClass(safeAgentView === "chat")}>

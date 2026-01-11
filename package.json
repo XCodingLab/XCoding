@@ -12,7 +12,7 @@
     "setup:codex": "node scripts/fetch-codex-binary.cjs",
     "setup:claude-code": "node scripts/copy-claude-code.cjs",
     "setup:fonts": "node scripts/fetch-firacode-nerd-font.cjs",
-    "dev": "concurrently -k \"vite\" \"pnpm run main:watch\" \"wait-on http://127.0.0.1:5173 file:dist/main/main.cjs && pnpm run electron:dev\"",
+    "dev": "node scripts/dev.cjs",
     "main:watch": "tsup --config tsup.config.ts --watch --onSuccess \"node scripts/copy-preload.cjs\"",
     "electron:dev": "node scripts/electron-dev.cjs .",
     "build": "vite build && tsup --config tsup.config.ts && node scripts/copy-preload.cjs",
@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.1.73",
-    "@anthropic-ai/claude-code": "2.1.1",
+    "@anthropic-ai/claude-code": "2.1.4",
     "@monaco-editor/react": "^4.7.0",
     "@types/node": "^25.0.3",
     "@vscode/ripgrep": "^1.17.0",

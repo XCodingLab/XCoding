@@ -15,20 +15,8 @@ export type ProjectServiceRequest =
   | { id: string; type: "fs:gitUnstage"; paths: string[] }
   | { id: string; type: "fs:gitDiscard"; paths: string[]; includeUntracked?: boolean }
   | { id: string; type: "fs:gitCommit"; message: string; amend?: boolean }
-  | { id: string; type: "fs:searchFiles"; query: string; maxResults?: number; useGitignore?: boolean }
-  | {
-      id: string;
-      type: "fs:searchContent";
-      query: string;
-      maxResults?: number;
-      caseSensitive?: boolean;
-      wholeWord?: boolean;
-      regex?: boolean;
-      filePattern?: string;
-      include?: string[];
-      exclude?: string[];
-      useGitignore?: boolean;
-    }
+  | { id: string; type: "fs:searchFiles"; query: string; maxResults?: number }
+  | { id: string; type: "fs:searchContent"; query: string; maxResults?: number }
   | {
       id: string;
       type: "fs:replaceContent";

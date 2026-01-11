@@ -281,9 +281,14 @@ function fileUriToRelPath(uri: string): string | null {
     const absPath = decodeURIComponent(u.pathname);
     const root = getActiveProjectRoot();
     if (!root) return null;
-    const normalizedRoot = root.replace(/[\\\\]+/g, "/").replace(/\/+$/, "");
-    const normalizedAbs = absPath.replace(/[\\\\]+/g, "/");
-    if (!normalizedAbs.startsWith(normalizedRoot)) return null;
+    let normalizedRoot = root.replace(/[\\\\]+/g, "/").replace(/\/+$/, "");
+    let normalizedAbs = absPath.replace(/[\\\\]+/g, "/");
+
+    // Windows file:// URLs may look like /C:/path/to/file. Normalize both sides for comparison.
+    if (/^\/[a-zA-Z]:\//.test(normalizedAbs)) normalizedAbs = normalizedAbs.slice(1);
+    if (/^\/[a-zA-Z]:\//.test(normalizedRoot)) normalizedRoot = normalizedRoot.slice(1);
+
+    if (!(normalizedAbs === normalizedRoot || normalizedAbs.startsWith(`${normalizedRoot}/`))) return null;
     const rel = normalizedAbs.slice(normalizedRoot.length).replace(/^\/+/, "");
     return rel || null;
   } catch {

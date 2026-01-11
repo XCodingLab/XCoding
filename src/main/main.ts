@@ -32,7 +32,9 @@ try {
 // (e.g. BrowserView previewing arbitrary websites). These warnings do not appear once packaged.
 if (!app.isPackaged) process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 
-const DEV_SERVER_URL = "http://127.0.0.1:5173";
+function getDevServerUrl(): string {
+  return process.env.XCODING_DEV_SERVER_URL || "http://127.0.0.1:5173";
+}
 
 // Ensure only one IDE instance runs at a time.
 // This guarantees we only ever spawn a single `codex app-server` for the whole IDE,
@@ -44,7 +46,7 @@ if (!gotSingleInstanceLock) {
   app.on("second-instance", () => {
     // Someone tried to run a second instance, create another window in the same process.
     // This preserves the "only one codex app-server" invariant while supporting multi-window UX.
-    const win = createWindow({ devServerUrl: DEV_SERVER_URL, onLastWindowClosed: onLastWindowClosedCleanup });
+    const win = createWindow({ devServerUrl: getDevServerUrl(), onLastWindowClosed: onLastWindowClosedCleanup });
     try {
       win.show();
       win.focus();
@@ -183,11 +185,12 @@ app.whenReady().then(() => {
 
   loadSettingsFromDisk();
   loadProjectsFromDisk();
-  const win = createWindow({ devServerUrl: DEV_SERVER_URL, onLastWindowClosed: onLastWindowClosedCleanup });
+  const devServerUrl = getDevServerUrl();
+  const win = createWindow({ devServerUrl, onLastWindowClosed: onLastWindowClosedCleanup });
   void setActiveSlotForWindow(win.id, activeSlotByWindowId.get(win.id) ?? 1);
   setupAppMenu(APP_NAME, settings.ui.language);
   setupIpc({
-    devServerUrl: DEV_SERVER_URL,
+    devServerUrl,
     onLastWindowClosed: onLastWindowClosedCleanup,
     onLanguageChanged: (language) => setupAppMenu(APP_NAME, language),
     setActiveSlotForWindow
@@ -204,7 +207,7 @@ app.whenReady().then(() => {
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow({ devServerUrl: DEV_SERVER_URL, onLastWindowClosed: onLastWindowClosedCleanup });
+    if (BrowserWindow.getAllWindows().length === 0) createWindow({ devServerUrl: getDevServerUrl(), onLastWindowClosed: onLastWindowClosedCleanup });
   });
 });
 

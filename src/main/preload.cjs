@@ -139,6 +139,12 @@ contextBridge.exposeInMainWorld("xcoding", {
   },
   claude: {
     ensureStarted: (payload) => ipcRenderer.invoke("claude:ensureStarted", payload),
+    supportedCommands: (payload) => ipcRenderer.invoke("claude:supportedCommands", payload),
+    supportedModels: (payload) => ipcRenderer.invoke("claude:supportedModels", payload),
+    accountInfo: (payload) => ipcRenderer.invoke("claude:accountInfo", payload),
+    setModel: (payload) => ipcRenderer.invoke("claude:setModel", payload),
+    setMaxThinkingTokens: (payload) => ipcRenderer.invoke("claude:setMaxThinkingTokens", payload),
+    buildOpenInTerminalCommand: (payload) => ipcRenderer.invoke("claude:buildOpenInTerminalCommand", payload),
     getStatus: (payload) => ipcRenderer.invoke("claude:getStatus", payload),
     sendUserMessage: (payload) => ipcRenderer.invoke("claude:sendUserMessage", payload),
     interrupt: (payload) => ipcRenderer.invoke("claude:interrupt", payload),
