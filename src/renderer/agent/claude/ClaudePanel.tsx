@@ -939,7 +939,9 @@ export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFi
       },
       hr: () => <hr className="my-4 border-t border-[var(--vscode-panel-border)]" />,
       table: ({ children }: any) => (
-        <div className="my-3 overflow-auto rounded border border-[var(--vscode-panel-border)]">{children}</div>
+        <div className="my-3 overflow-auto rounded border border-[var(--vscode-panel-border)]">
+          <table className="w-full border-collapse">{children}</table>
+        </div>
       ),
       thead: ({ children }: any) => <thead className="bg-black/10">{children}</thead>,
       th: ({ children }: any) => <th className="border-b border-[var(--vscode-panel-border)] px-2 py-1 text-left text-[12px]">{children}</th>,
