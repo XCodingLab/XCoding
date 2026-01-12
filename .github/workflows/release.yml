@@ -86,11 +86,11 @@ jobs:
         with:
           name: xcoding-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            dist/*.dmg
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.blockmap
-            dist/*.yml
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.blockmap
+            release/*.yml
 
   github_release:
     name: Publish GitHub Release

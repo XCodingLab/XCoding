@@ -40,6 +40,22 @@ function rmIfExists(p) {
   }
 }
 
+function removeOtherVersions(baseDir, keepDirName) {
+  if (!fs.existsSync(baseDir)) return;
+  for (const ent of fs.readdirSync(baseDir, { withFileTypes: true })) {
+    if (ent.name === ".gitkeep" || ent.name === "version.txt") continue;
+    if (ent.name === keepDirName) continue;
+    rmIfExists(path.join(baseDir, ent.name));
+  }
+}
+
+function getRipgrepDirsForCurrentPlatform() {
+  if (process.platform === "darwin") return ["arm64-darwin", "x64-darwin"];
+  if (process.platform === "linux") return ["arm64-linux", "x64-linux"];
+  if (process.platform === "win32") return ["x64-win32"];
+  return [];
+}
+
 function main() {
   const skip = String(process.env.XCODING_SKIP_CLAUDE_CODE_SETUP || "").trim() === "1";
   if (skip) {
@@ -51,7 +67,11 @@ function main() {
   const srcRoot = path.join(repoRoot(), "node_modules", "@anthropic-ai", "claude-code");
   if (!fs.existsSync(srcRoot)) throw new Error(`missing_source_dir:${srcRoot}`);
 
-  const outRoot = path.join(repoRoot(), "assets", "claude-code", version);
+  const baseOut = path.join(repoRoot(), "assets", "claude-code");
+  ensureDir(baseOut);
+  removeOtherVersions(baseOut, version);
+
+  const outRoot = path.join(baseOut, version);
   rmIfExists(outRoot);
   ensureDir(outRoot);
 
@@ -60,8 +80,7 @@ function main() {
     "package.json",
     "resvg.wasm",
     "tree-sitter.wasm",
-    "tree-sitter-bash.wasm",
-    path.join("vendor", "ripgrep")
+    "tree-sitter-bash.wasm"
   ];
 
   for (const rel of required) {
@@ -70,7 +89,27 @@ function main() {
     copyRecursive(from, path.join(outRoot, rel));
   }
 
-  fs.writeFileSync(path.join(repoRoot(), "assets", "claude-code", "version.txt"), `${version}\n`, "utf8");
+  // Copy only the ripgrep binaries for the current OS (and common macOS/Linux arches),
+  // to avoid bundling all platforms into the packaged app.
+  const rgRoot = path.join(srcRoot, "vendor", "ripgrep");
+  const rgOut = path.join(outRoot, "vendor", "ripgrep");
+  if (!fs.existsSync(rgRoot)) throw new Error("missing_required_dir:vendor/ripgrep");
+  ensureDir(rgOut);
+  copyRecursive(path.join(rgRoot, "COPYING"), path.join(rgOut, "COPYING"));
+  const rgDirs = getRipgrepDirsForCurrentPlatform();
+  if (!rgDirs.length) throw new Error(`unsupported_platform_for_ripgrep:${process.platform}`);
+  const copiedDirs = [];
+  for (const dir of rgDirs) {
+    const from = path.join(rgRoot, dir);
+    if (!fs.existsSync(from)) continue;
+    copyRecursive(from, path.join(rgOut, dir));
+    copiedDirs.push(dir);
+  }
+  if (!copiedDirs.length) {
+    throw new Error(`missing_ripgrep_bins_for_platform:${process.platform}`);
+  }
+
+  fs.writeFileSync(path.join(baseOut, "version.txt"), `${version}\n`, "utf8");
 
   const copied = [];
   const walk = (dir) => {
@@ -83,8 +122,7 @@ function main() {
   walk(outRoot);
 
   console.log(`[copy:claude-code] Copied @anthropic-ai/claude-code@${version} to ${path.relative(repoRoot(), outRoot)}`);
-  console.log(`[copy:claude-code] Files: ${copied.length}`);
+  console.log(`[copy:claude-code] Files: ${copied.length} (ripgrep: ${copiedDirs.join(", ")})`);
 }
 
 main();
-

@@ -17,18 +17,70 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.1.73
         version: 0.1.73(zod@4.3.5)
+      '@vscode/ripgrep':
+        specifier: ^1.17.0
+        version: 1.17.0
+      buffer-crc32:
+        specifier: ^0.2.13
+        version: 0.2.13
+      chokidar:
+        specifier: ^4.0.3
+        version: 4.0.3
+      fd-slicer:
+        specifier: ^1.1.0
+        version: 1.1.0
+      node-pty:
+        specifier: 1.1.0-beta43
+        version: 1.1.0-beta43
+      pend:
+        specifier: ^1.2.0
+        version: 1.2.0
+      pyright:
+        specifier: ^1.1.407
+        version: 1.1.407
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vscode-jsonrpc:
+        specifier: ^8.2.1
+        version: 8.2.1
+      vscode-languageserver-protocol:
+        specifier: ^3.17.5
+        version: 3.17.5
+      yauzl:
+        specifier: ^2.10.0
+        version: 2.10.0
+    devDependencies:
       '@anthropic-ai/claude-code':
         specifier: 2.1.4
         version: 2.1.4
+      '@eslint/js':
+        specifier: ^9.39.0
+        version: 9.39.2
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.52.2)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@types/node':
         specifier: ^25.0.3
         version: 25.0.3
-      '@vscode/ripgrep':
-        specifier: ^1.17.0
-        version: 1.17.0
+      '@types/react':
+        specifier: ^18.3.18
+        version: 18.3.27
+      '@types/react-dom':
+        specifier: ^18.3.5
+        version: 18.3.7(@types/react@18.3.27)
+      '@types/yauzl':
+        specifier: ^2.10.3
+        version: 2.10.3
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.18.0
+        version: 8.50.1(@typescript-eslint/parser@8.50.1(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^8.18.0
+        version: 8.50.1(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)
+      '@vitejs/plugin-react':
+        specifier: ^4.3.4
+        version: 4.7.0(vite@6.4.1(@types/node@25.0.3)(jiti@1.21.7)(tsx@4.21.0))
       '@xterm/addon-canvas':
         specifier: ^0.7.0
         version: 0.7.0(@xterm/xterm@5.5.0)
@@ -50,21 +102,30 @@ importers:
       '@xterm/xterm':
         specifier: ^5.5.0
         version: 5.5.0
-      chokidar:
-        specifier: ^4.0.3
-        version: 4.0.3
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.4.23(postcss@8.5.6)
+      concurrently:
+        specifier: ^9.1.0
+        version: 9.2.1
+      electron:
+        specifier: ^32.2.7
+        version: 32.3.3
+      electron-builder:
+        specifier: ^24.13.3
+        version: 24.13.3(electron-builder-squirrel-windows@24.13.3)
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.2(jiti@1.21.7)
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@18.3.1)
       monaco-editor:
         specifier: ^0.52.2
         version: 0.52.2
-      node-pty:
-        specifier: 1.1.0-beta43
-        version: 1.1.0-beta43
-      pyright:
-        specifier: ^1.1.407
-        version: 1.1.407
+      postcss:
+        specifier: ^8.5.1
+        version: 8.5.6
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -83,58 +144,6 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
-      typescript:
-        specifier: ^5.7.3
-        version: 5.9.3
-      vscode-jsonrpc:
-        specifier: ^8.2.1
-        version: 8.2.1
-      vscode-languageserver-protocol:
-        specifier: ^3.17.5
-        version: 3.17.5
-      yauzl:
-        specifier: ^2.10.0
-        version: 2.10.0
-    devDependencies:
-      '@eslint/js':
-        specifier: ^9.39.0
-        version: 9.39.2
-      '@types/react':
-        specifier: ^18.3.18
-        version: 18.3.27
-      '@types/react-dom':
-        specifier: ^18.3.5
-        version: 18.3.7(@types/react@18.3.27)
-      '@types/yauzl':
-        specifier: ^2.10.3
-        version: 2.10.3
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^8.18.0
-        version: 8.50.1(@typescript-eslint/parser@8.50.1(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)
-      '@typescript-eslint/parser':
-        specifier: ^8.18.0
-        version: 8.50.1(eslint@9.39.2(jiti@1.21.7))(typescript@5.9.3)
-      '@vitejs/plugin-react':
-        specifier: ^4.3.4
-        version: 4.7.0(vite@6.4.1(@types/node@25.0.3)(jiti@1.21.7)(tsx@4.21.0))
-      autoprefixer:
-        specifier: ^10.4.20
-        version: 10.4.23(postcss@8.5.6)
-      concurrently:
-        specifier: ^9.1.0
-        version: 9.2.1
-      electron:
-        specifier: ^32.2.7
-        version: 32.3.3
-      electron-builder:
-        specifier: ^24.13.3
-        version: 24.13.3(electron-builder-squirrel-windows@24.13.3)
-      eslint:
-        specifier: ^9.17.0
-        version: 9.39.2(jiti@1.21.7)
-      postcss:
-        specifier: ^8.5.1
-        version: 8.5.6
       tailwindcss:
         specifier: ^3.4.17
         version: 3.4.19(tsx@4.21.0)
