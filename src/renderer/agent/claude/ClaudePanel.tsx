@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { useI18n } from "../../ui/i18n";
-import { isMustLanguage, parseFenceClassName } from "../../languageSupport";
 import { applyClaudeStreamEvent, createClaudeStore, type ClaudeEventEnvelope, type ClaudeStore, type ClaudeUiMessage } from "./store/claudeStore";
 import { persistMode, safeLoadMode, type ClaudePermissionMode } from "./panel/types";
 import ClaudeHistoryOverlay from "./components/ClaudeHistoryOverlay";
@@ -12,17 +11,28 @@ import ClaudeSettingsModal from "./panel/ClaudeSettingsModal";
 import ClaudeAuthModal from "./panel/ClaudeAuthModal";
 import ClaudeFileDiffView from "./components/ClaudeFileDiffView";
 import DiffViewer from "../shared/DiffViewer";
-import MonacoCodeBlock from "../shared/MonacoCodeBlock";
 import ProposedDiffCard, { type ProposedDiffCardPreview } from "../shared/ProposedDiffCard";
 import { ClaudeCommandRegistry, type ClaudeRegisteredCommand } from "./commandRegistry";
 import {
   canonicalizeAtMentionBody,
   extractAtMentionPathsFromText,
-  extractTrailingAtMentionBodies,
   formatAtMentionBody,
   formatAtMentionToken,
   parseAtMentionBody
 } from "./panel/atMentions";
+import { findAtToken, findSlashToken } from "./panel/inputTokens";
+import {
+  coerceNonEmptyString,
+  formatJson,
+  modeLabel,
+  OFFICIAL_DENY_MESSAGE,
+  OFFICIAL_STAY_IN_PLAN_MESSAGE,
+  parseToolMessage,
+  toProposedDiffCardPreview
+} from "./panel/panelUtils";
+import { useClaudeDiffPanel } from "./panel/useClaudeDiffPanel";
+import { useClaudeHistory } from "./panel/useClaudeHistory";
+import { useClaudeMarkdownComponents } from "./panel/useClaudeMarkdownComponents";
 
 type Props = {
   slot: number;
@@ -33,131 +43,6 @@ type Props = {
   isActive?: boolean;
 };
 
-type ClaudeSessionReadResult = Awaited<ReturnType<Window["xcoding"]["claude"]["sessionRead"]>>;
-
-function formatJson(value: unknown) {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function parseToolMessage(text: string) {
-  const raw = String(text ?? "");
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (!trimmed.startsWith("tool_use:") && !trimmed.startsWith("tool_result")) return null;
-
-  const firstNewline = trimmed.indexOf("\n");
-  const firstLine = (firstNewline === -1 ? trimmed : trimmed.slice(0, firstNewline)).trim();
-  const rest = firstNewline === -1 ? "" : trimmed.slice(firstNewline + 1);
-
-  if (firstLine.startsWith("tool_use:")) {
-    const name = firstLine.replace(/^tool_use:\s*/, "").trim();
-    return { kind: "tool_use" as const, title: name || "tool", detail: rest.trim() };
-  }
-
-  // tool_result (maybe contains "(toolUseId)" and "[error]" markers)
-  return { kind: "tool_result" as const, title: firstLine, detail: rest.trim() };
-}
-
-function parseRelFileHref(href: string): null | { relPath: string; line?: number; column?: number } {
-  const raw = String(href ?? "").trim();
-  if (!raw) return null;
-  if (raw.startsWith("#")) return null;
-  if (/^[a-zA-Z]+:\/\//.test(raw)) return null;
-
-  // Strip leading "./"
-  let url = raw.replace(/^\.\/+/, "");
-  if (!url || url.startsWith("..")) return null;
-
-  // Support foo.ts#L10 or foo.ts#L10-L20
-  let anchorLine: number | undefined;
-  const hashIdx = url.indexOf("#");
-  if (hashIdx !== -1) {
-    const before = url.slice(0, hashIdx);
-    const hash = url.slice(hashIdx + 1);
-    url = before;
-    const m = hash.match(/^L(\d+)(?:-(?:L)?(\d+))?$/i);
-    if (m) anchorLine = Number(m[1]);
-  }
-
-  // Support foo.ts:10 or foo.ts:10:3 or foo.ts:10-20 (take first line)
-  let relPath = url;
-  let line: number | undefined = anchorLine;
-  let column: number | undefined;
-  const mRange = relPath.match(/:(\d+)-(\d+)$/);
-  if (mRange) {
-    relPath = relPath.slice(0, relPath.length - mRange[0].length);
-    line = Number(mRange[1]);
-  } else {
-    const mPos = relPath.match(/:(\d+)(?::(\d+))?$/);
-    if (mPos) {
-      relPath = relPath.slice(0, relPath.length - mPos[0].length);
-      line = Number(mPos[1]);
-      if (mPos[2]) column = Number(mPos[2]);
-    }
-  }
-
-  relPath = relPath.trim();
-  if (!relPath || relPath.startsWith("..")) return null;
-  if (!line || !Number.isFinite(line) || line <= 0) line = undefined;
-  if (!column || !Number.isFinite(column) || column <= 0) column = undefined;
-  return { relPath, ...(line ? { line } : {}), ...(column ? { column } : {}) };
-}
-
-function toProposedDiffCardPreview(value: any): ProposedDiffCardPreview | null {
-  if (!value || typeof value !== "object") return null;
-  if (value.loading === true) return { kind: "loading" };
-  if (typeof value.error === "string" && value.error.trim()) return { kind: "error", error: value.error };
-  const relPath = typeof value.relPath === "string" ? value.relPath : typeof value.path === "string" ? value.path : "";
-  const unifiedDiff = typeof value.unifiedDiff === "string" ? value.unifiedDiff : "";
-  if (!relPath && !unifiedDiff.trim()) return null;
-  return {
-    kind: "diff",
-    relPath: relPath || "unknown",
-    unifiedDiff,
-    added: typeof value.added === "number" ? value.added : undefined,
-    removed: typeof value.removed === "number" ? value.removed : undefined,
-    atMs: typeof value.atMs === "number" ? value.atMs : undefined
-  };
-}
-
-function modeLabel(mode: ClaudePermissionMode) {
-  switch (mode) {
-    case "default":
-      return "default";
-    case "acceptEdits":
-      return "acceptEdits";
-    case "plan":
-      return "plan";
-    case "bypassPermissions":
-      return "bypassPermissions";
-    default:
-      return "default";
-  }
-}
-
-// Keep these strings exactly aligned with the official VS Code plugin webview build.
-const OFFICIAL_DENY_MESSAGE =
-  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
-const OFFICIAL_STAY_IN_PLAN_MESSAGE = "User chose to stay in plan mode and continue planning";
-
-function coerceNonEmptyString(value: unknown): string | null {
-  const s = typeof value === "string" ? value : value == null ? "" : String(value);
-  const trimmed = s.trim();
-  return trimmed ? trimmed : null;
-}
-
-function isUnhelpfulHistoryMarkerLine(text: string) {
-  const t = String(text || "").trim().toLowerCase();
-  if (!t) return true;
-  if (t === "no response requested.") return true;
-  if (t === "[request interrupted by user]") return true;
-  return false;
-}
-
 export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFile, onOpenTerminalAndRun, isActive }: Props) {
   const { t } = useI18n();
   const isDev = Boolean((import.meta as any)?.env?.DEV);
@@ -166,30 +51,8 @@ export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFi
   const [input, setInput] = useState("");
   const [isTurnInProgress, setIsTurnInProgress] = useState(false);
   const [pendingApprovalId, setPendingApprovalId] = useState<string | null>(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [historyQuery, setHistoryQuery] = useState("");
-  const [historySessions, setHistorySessions] = useState<Array<{ sessionId: string; updatedAtMs: number; preview?: string }>>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const interruptedDraftBySessionIdRef = useRef<Map<string, ClaudeUiMessage[]>>(new Map());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [diffSessionId, setDiffSessionId] = useState<string | null>(null);
-  const [isDiffPanelOpen, setIsDiffPanelOpen] = useState(false);
-  const [diffFiles, setDiffFiles] = useState<Array<{ absPath: string; backupName: string }>>([]);
-  const [diffQuery, setDiffQuery] = useState("");
-  const [diffStats, setDiffStats] = useState<Record<string, { added: number; removed: number }>>({});
-  const [diffSelectedAbsPath, setDiffSelectedAbsPath] = useState<string>("");
-  const [diffState, setDiffState] = useState<{
-    loading: boolean;
-    original: string;
-    modified: string;
-    unifiedDiff?: string;
-    unifiedTruncated?: boolean;
-    error?: string;
-  }>({
-    loading: false,
-    original: "",
-    modified: ""
-  });
   const storeRef = useRef<ClaudeStore>(createClaudeStore());
   const scheduledRafRef = useRef<number | null>(null);
   const hydratedModeRef = useRef(false);
@@ -286,6 +149,53 @@ export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFi
     [bump]
   );
 
+  const {
+    diffSessionId,
+    setDiffSessionId,
+    isDiffPanelOpen,
+    setIsDiffPanelOpen,
+    diffFiles,
+    setDiffFiles,
+    diffQuery,
+    setDiffQuery,
+    diffStats,
+    setDiffStats,
+    diffSelectedAbsPath,
+    setDiffSelectedAbsPath,
+    diffState,
+    setDiffState,
+    toDisplayPath,
+    refreshDiffFiles,
+    visibleDiffFiles,
+    loadDiffForFile,
+    openSelectedFile,
+    resetDiffListState
+  } = useClaudeDiffPanel({ projectRootPath, pushSystemMessage });
+
+  const {
+    isHistoryOpen,
+    setIsHistoryOpen,
+    historyQuery,
+    setHistoryQuery,
+    historyLoading,
+    visibleHistorySessions,
+    refreshHistory,
+    loadHistorySession,
+    forkHistorySession
+  } = useClaudeHistory({
+    slot,
+    projectRootPath,
+    mode,
+    isDev,
+    storeRef,
+    interruptedDraftBySessionIdRef,
+    bump,
+    pushSystemMessage,
+    setIsTurnInProgress,
+    setDiffSessionId,
+    resetDiffListState
+  });
+
   const ensureStartedAndSyncSession = useCallback(
     async (args: { projectRootPath: string; sessionId?: string | null; permissionMode?: ClaudePermissionMode; forkSession?: boolean }) => {
       const root = String(args.projectRootPath ?? "").trim();
@@ -306,6 +216,39 @@ export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFi
     },
     [pushSystemMessage, slot]
   );
+
+  useEffect(() => {
+    if (!isActive) return;
+    const root = String(projectRootPath ?? "").trim();
+    if (!root) {
+      setSupportedCommands([]);
+      setSupportedModels([]);
+      setAccountInfo(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const ensure = await ensureStartedAndSyncSession({ projectRootPath: root, permissionMode: mode });
+      if (!ensure?.ok || cancelled) return;
+      const sessionId = typeof ensure.sessionId === "string" && ensure.sessionId.trim() ? ensure.sessionId.trim() : null;
+
+      const [commandsRes, modelsRes, accountRes] = await Promise.all([
+        window.xcoding.claude.supportedCommands({ slot, projectRootPath: root, sessionId, permissionMode: mode }),
+        window.xcoding.claude.supportedModels({ slot, projectRootPath: root, sessionId, permissionMode: mode }),
+        window.xcoding.claude.accountInfo({ slot, projectRootPath: root, sessionId, permissionMode: mode })
+      ]);
+      if (cancelled) return;
+
+      if (commandsRes?.ok) setSupportedCommands(commandsRes.commands ?? []);
+      if (modelsRes?.ok) setSupportedModels(modelsRes.models ?? []);
+      if (accountRes?.ok) setAccountInfo(accountRes.accountInfo ?? null);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureStartedAndSyncSession, isActive, mode, projectRootPath, slot]);
 
   useEffect(() => {
     const onSelectionChanged = (e: Event) => {
@@ -502,301 +445,6 @@ export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFi
       offReq();
     };
   }, [bump, isDev, slot]);
-
-  const refreshHistory = useCallback(async () => {
-    if (!projectRootPath) return;
-    setHistoryLoading(true);
-    try {
-      const res = await window.xcoding.claude.historyList({ projectRootPath });
-      if (res?.ok && Array.isArray(res.sessions)) {
-        const rows = res.sessions
-          .map((s: any) => ({
-            sessionId: String(s.sessionId ?? ""),
-            updatedAtMs: Number(s.updatedAtMs ?? 0),
-            preview: typeof s.preview === "string" ? s.preview : undefined
-          }))
-          .filter((s: any) => s.sessionId);
-        rows.sort((a: any, b: any) => Number(b.updatedAtMs) - Number(a.updatedAtMs));
-        setHistorySessions(rows);
-      } else {
-        pushSystemMessage(`Failed to load history: ${String(res?.reason ?? "unknown")}`);
-        setHistorySessions([]);
-      }
-    } catch (e) {
-      pushSystemMessage(`Failed to load history: ${e instanceof Error ? e.message : String(e)}`);
-      setHistorySessions([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [projectRootPath, pushSystemMessage]);
-
-  const visibleHistorySessions = useMemo(() => {
-    const q = historyQuery.trim().toLowerCase();
-    if (!q) return historySessions;
-    return historySessions.filter((s) => {
-      if (s.sessionId.toLowerCase().includes(q)) return true;
-      const p = String(s.preview ?? "").toLowerCase();
-      return p.includes(q);
-    });
-  }, [historyQuery, historySessions]);
-
-  const loadHistorySession = useCallback(
-    async (sessionId: string) => {
-      if (!projectRootPath) return;
-      const targetSessionId = String(sessionId ?? "").trim();
-      if (!targetSessionId) return;
-      setHistoryLoading(true);
-      try {
-        const cached = interruptedDraftBySessionIdRef.current.get(targetSessionId);
-        if (cached && cached.length) {
-          const cachedAssistantChars = cached
-            .filter((m) => m.role === "assistant" && typeof m.text === "string")
-            .reduce((sum, m) => sum + String(m.text).length, 0);
-          if (cachedAssistantChars > 0) {
-            storeRef.current.messages = cached.map((m) => ({
-              ...m,
-              meta: { ...(m.meta as any), restoredFromInterruptedDraft: true }
-            }));
-            setDiffSessionId(targetSessionId);
-            setDiffFiles([]);
-            setDiffQuery("");
-            setDiffStats({});
-            setDiffSelectedAbsPath("");
-            setIsTurnInProgress(false);
-            bump();
-            setIsHistoryOpen(false);
-            return;
-          }
-        }
-
-        // Read history first so the UI isn't blocked by resume/startup.
-        const res = await Promise.race<ClaudeSessionReadResult>([
-          window.xcoding.claude.sessionRead({ projectRootPath, sessionId: targetSessionId }),
-          new Promise<ClaudeSessionReadResult>((resolve) => setTimeout(() => resolve({ ok: false, reason: "sessionRead_timeout" }), 8000))
-        ]);
-        if (!res?.ok || !res.thread?.turns) {
-          storeRef.current.messages.unshift({
-            id: `err-${Date.now()}`,
-            role: "system",
-            text: `Failed to load session: ${String(res?.reason ?? "unknown")}`
-          });
-          bump();
-          return;
-        }
-        const turnsArr = res.thread.turns as any[];
-        if (!turnsArr.length) {
-          storeRef.current.messages.unshift({
-            id: `err-${Date.now()}`,
-            role: "system",
-            text: "Session file has no chat messages."
-          });
-          bump();
-          return;
-        }
-        storeRef.current.messages = [];
-        let added = 0;
-        for (const turn of turnsArr) {
-          if (Array.isArray(turn.toolEvents) && turn.toolEvents.length) {
-            for (const te of turn.toolEvents as any[]) {
-              if (te.kind === "tool_use") {
-                storeRef.current.messages.push({
-                  id: `htu-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-                  role: "system",
-                  text: `tool_use: ${String(te.name ?? "tool")}\n${JSON.stringify(te.input ?? {}, null, 2)}`
-                });
-                added += 1;
-              } else if (te.kind === "tool_result") {
-                storeRef.current.messages.push({
-                  id: `htr-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-                  role: "system",
-                  text: `tool_result${te.toolUseId ? ` (${te.toolUseId})` : ""}${te.isError ? " [error]" : ""}:\n${String(te.content ?? "")}`
-                });
-                added += 1;
-              }
-            }
-          }
-          if (turn.user?.text) {
-            const rawText = String(turn.user.text);
-            const decoded = extractTrailingAtMentionBodies(rawText);
-            if (isUnhelpfulHistoryMarkerLine(decoded.visibleText)) {
-              // Do not render CLI status marker as a standalone "message" row.
-              continue;
-            }
-            const meta: any = { uuid: turn.user?.uuid };
-            if (decoded.bodies.length) meta.attachedFiles = decoded.bodies;
-            storeRef.current.messages.push({ id: `hu-${turn.id}`, role: "user", text: decoded.visibleText, meta });
-            added += 1;
-          }
-          if (turn.assistant?.text)
-            storeRef.current.messages.push({
-              id: `ha-${turn.id}`,
-              role: "assistant",
-              text: String(turn.assistant.text),
-              meta: { uuid: turn.assistant?.uuid, assistantMessageId: turn.assistant?.assistantMessageId }
-            });
-          if (turn.assistant?.text) added += 1;
-        }
-        if (cached && cached.length) {
-          // Prefer the cached draft if it contains more assistant output than what is persisted in jsonl.
-          const cachedAssistantChars = cached
-            .filter((m) => m.role === "assistant" && typeof m.text === "string")
-            .reduce((sum, m) => sum + String(m.text).length, 0);
-          const loadedAssistantChars = storeRef.current.messages
-            .filter((m) => m.role === "assistant" && typeof m.text === "string")
-            .reduce((sum, m) => sum + String(m.text).length, 0);
-          if (cachedAssistantChars > loadedAssistantChars) {
-            storeRef.current.messages = cached.map((m) => ({
-              ...m,
-              meta: { ...(m.meta as any), restoredFromInterruptedDraft: true }
-            }));
-          }
-        }
-        if (isDev) {
-          storeRef.current.messages.unshift({
-            id: `hist-${Date.now()}`,
-            role: "system",
-            text: `Loaded history (${added} messages)`
-          });
-        }
-        setDiffSessionId(targetSessionId);
-        setDiffFiles([]);
-        setDiffQuery("");
-        setDiffStats({});
-        setDiffSelectedAbsPath("");
-        setIsTurnInProgress(false);
-        bump();
-        setIsHistoryOpen(false);
-      } catch (e) {
-        pushSystemMessage(`Failed to load session: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
-        setHistoryLoading(false);
-      }
-    },
-    [bump, isDev, projectRootPath, pushSystemMessage]
-  );
-
-  const forkHistorySession = useCallback(
-    async (baseSessionId: string) => {
-      if (!projectRootPath) return;
-      setHistoryLoading(true);
-      try {
-        const res = await window.xcoding.claude.forkSession({ slot, projectRootPath, sessionId: baseSessionId, permissionMode: mode });
-        if (res?.ok && typeof res.sessionId === "string" && res.sessionId) {
-          await loadHistorySession(String(res.sessionId));
-        } else {
-          pushSystemMessage(`Failed to fork session: ${String(res?.reason ?? "unknown")}`);
-        }
-      } catch (e) {
-        pushSystemMessage(`Failed to fork session: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
-        setHistoryLoading(false);
-      }
-    },
-    [loadHistorySession, mode, projectRootPath, pushSystemMessage, slot]
-  );
-
-  const toDisplayPath = useCallback(
-    (absPath: string) => {
-      const abs = String(absPath ?? "");
-      const root = String(projectRootPath ?? "");
-      if (!abs) return "";
-      const fromRel = diffFiles.find((f: any) => f.absPath === absPath && typeof (f as any).relPath === "string") as any;
-      if (fromRel?.relPath) return String(fromRel.relPath);
-      if (root && abs.startsWith(root)) {
-        const cut = abs.slice(root.length);
-        return cut.startsWith("/") ? cut.slice(1) : cut || abs;
-      }
-      return abs;
-    },
-    [diffFiles, projectRootPath]
-  );
-
-  const refreshDiffFiles = useCallback(async () => {
-    if (!projectRootPath || !diffSessionId) return;
-    try {
-      const res = await window.xcoding.claude.latestSnapshotFiles({ projectRootPath, sessionId: diffSessionId });
-      if (res?.ok && Array.isArray(res.files)) {
-        const rows = res.files
-          .map((f: any) => ({
-            absPath: String(f.absPath ?? ""),
-            backupName: String(f.backupName ?? ""),
-            relPath: typeof f.relPath === "string" ? String(f.relPath) : undefined,
-            added: typeof f.added === "number" ? Number(f.added) : undefined,
-            removed: typeof f.removed === "number" ? Number(f.removed) : undefined
-          }))
-          .filter((f: any) => f.absPath);
-        rows.sort((a: any, b: any) => toDisplayPath(a.absPath).localeCompare(toDisplayPath(b.absPath)));
-        setDiffFiles(rows);
-
-        setDiffStats(() => {
-          const next: Record<string, { added: number; removed: number }> = {};
-          for (const r of rows) {
-            if (typeof r.added === "number" && typeof r.removed === "number") next[r.absPath] = { added: r.added, removed: r.removed };
-          }
-          return next;
-        });
-        return;
-      }
-      pushSystemMessage(`Failed to load snapshot files: ${String(res?.reason ?? "unknown")}`);
-      setDiffFiles([]);
-      setDiffStats({});
-    } catch (e) {
-      pushSystemMessage(`Failed to load snapshot files: ${e instanceof Error ? e.message : String(e)}`);
-      setDiffFiles([]);
-      setDiffStats({});
-    }
-  }, [diffSessionId, projectRootPath, pushSystemMessage, toDisplayPath]);
-
-  const visibleDiffFiles = useMemo(() => {
-    const q = diffQuery.trim().toLowerCase();
-    if (!q) return diffFiles;
-    return diffFiles.filter((f) => toDisplayPath(f.absPath).toLowerCase().includes(q));
-  }, [diffFiles, diffQuery, toDisplayPath]);
-
-  const loadDiffForFile = useCallback(
-    async (absPath: string) => {
-      if (!projectRootPath || !diffSessionId) return;
-      setDiffSelectedAbsPath(absPath);
-      setDiffState((s) => ({ ...s, loading: true, error: undefined }));
-      try {
-        const res = await window.xcoding.claude.turnFileDiff({ projectRootPath, sessionId: diffSessionId, absPath });
-        if (res?.ok) {
-          setDiffState({
-            loading: false,
-            original: String(res.original ?? ""),
-            modified: String(res.modified ?? ""),
-            unifiedDiff: typeof res.unifiedDiff === "string" ? String(res.unifiedDiff) : "",
-            unifiedTruncated: Boolean(res.unifiedTruncated)
-          });
-          const added = typeof res.added === "number" ? Number(res.added) : undefined;
-          const removed = typeof res.removed === "number" ? Number(res.removed) : undefined;
-          if (absPath && typeof added === "number" && typeof removed === "number") {
-            setDiffStats((prev) => (prev[absPath] ? prev : { ...prev, [absPath]: { added, removed } }));
-          }
-          return;
-        }
-        setDiffState({
-          loading: false,
-          original: "",
-          modified: "",
-          unifiedDiff: "",
-          unifiedTruncated: false,
-          error: String(res?.reason ?? "diff_failed")
-        });
-      } catch (e) {
-        setDiffState({
-          loading: false,
-          original: "",
-          modified: "",
-          unifiedDiff: "",
-          unifiedTruncated: false,
-          error: e instanceof Error ? e.message : String(e)
-        });
-        pushSystemMessage(`Failed to load diff: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    },
-    [diffSessionId, projectRootPath, pushSystemMessage]
-  );
 
   const messages = storeRef.current.messages;
   const approvals = storeRef.current.approvals;
@@ -995,95 +643,7 @@ export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFi
     isNearBottomRef.current = dist <= 24;
   };
 
-  const markdownComponents = useMemo(() => {
-    return {
-      p: ({ children }: any) => <p className="my-3 whitespace-pre-wrap text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{children}</p>,
-      a: ({ children, href }: any) => {
-        const url = String(href ?? "");
-        const isHttp = url.startsWith("http://") || url.startsWith("https://");
-        const isAnchor = url.startsWith("#");
-        return (
-          <a
-            className="text-[color-mix(in_srgb,var(--vscode-focusBorder)_90%,white)] underline decoration-white/20 underline-offset-2 hover:decoration-white/60"
-            href={href}
-            target={isHttp ? "_blank" : undefined}
-            rel={isHttp ? "noreferrer" : undefined}
-            onClick={(e) => {
-              if (isAnchor) return;
-              e.preventDefault();
-              e.stopPropagation();
-              if (isHttp) {
-                onOpenUrl(url);
-                return;
-              }
-              const parsed = parseRelFileHref(url);
-              if (!parsed) return;
-              void (async () => {
-                try {
-                  const res = await window.xcoding.project.stat({ slot, path: parsed.relPath });
-                  if (!res?.ok) {
-                    pushSystemMessage(`Failed to open path: ${String(res?.reason ?? "stat_failed")}`);
-                    return;
-                  }
-                  if (res.exists === false) {
-                    pushSystemMessage(`Path not found: ${parsed.relPath}`);
-                    return;
-                  }
-                  if (res.isDirectory) {
-                    window.dispatchEvent(new CustomEvent("xcoding:revealInExplorer", { detail: { slot, relPath: parsed.relPath, kind: "dir" } }));
-                    return;
-                  }
-                  onOpenFile(parsed.relPath, parsed.line, parsed.column);
-                } catch (err) {
-                  pushSystemMessage(`Failed to open path: ${err instanceof Error ? err.message : String(err)}`);
-                }
-              })();
-            }}
-          >
-            {children}
-          </a>
-        );
-      },
-      ul: ({ children }: any) => <ul className="my-3 list-disc pl-6 text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{children}</ul>,
-      ol: ({ children }: any) => <ol className="my-3 list-decimal pl-6 text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{children}</ol>,
-      li: ({ children }: any) => <li className="my-1">{children}</li>,
-      blockquote: ({ children }: any) => (
-        <blockquote className="my-3 border-l-2 border-[color-mix(in_srgb,var(--vscode-panel-border)_90%,white)] pl-3 text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)] opacity-90">
-          {children}
-        </blockquote>
-      ),
-      h1: ({ children }: any) => <h1 className="my-4 text-[18px] font-semibold text-[var(--vscode-foreground)]">{children}</h1>,
-      h2: ({ children }: any) => <h2 className="my-4 text-[16px] font-semibold text-[var(--vscode-foreground)]">{children}</h2>,
-      h3: ({ children }: any) => <h3 className="my-3 text-[14px] font-semibold text-[var(--vscode-foreground)]">{children}</h3>,
-      pre: ({ children }: any) => <pre className="my-3 overflow-auto rounded border border-token-border bg-black/20 p-3 text-[12px]">{children}</pre>,
-      code: ({ inline, className, children }: any) => {
-        const text = String(children ?? "").replace(/\n$/, "");
-        const isInline = Boolean(inline) || (!className && !text.includes("\n"));
-        if (isInline) return <code className="xcoding-inline-code font-mono text-[12px]">{text}</code>;
-        const languageId = parseFenceClassName(className);
-        if (!isMustLanguage(languageId)) return <code className="block whitespace-pre font-mono">{text}</code>;
-        return <MonacoCodeBlock code={text} languageId={languageId} className={className} />;
-      },
-      hr: () => <hr className="my-4 border-t border-[var(--vscode-panel-border)]" />,
-      table: ({ children }: any) => (
-        <div className="my-3 overflow-auto rounded border border-[var(--vscode-panel-border)]">
-          <table className="w-full border-collapse">{children}</table>
-        </div>
-      ),
-      thead: ({ children }: any) => <thead className="bg-black/10">{children}</thead>,
-      th: ({ children }: any) => <th className="border-b border-[var(--vscode-panel-border)] px-2 py-1 text-left text-[12px]">{children}</th>,
-      td: ({ children }: any) => <td className="border-b border-[var(--vscode-panel-border)] px-2 py-1 text-[12px]">{children}</td>,
-      tr: ({ children }: any) => <tr className="align-top">{children}</tr>,
-      tbody: ({ children }: any) => <tbody>{children}</tbody>
-    };
-  }, [onOpenFile, onOpenUrl, pushSystemMessage, slot]);
-
-  const openSelectedFile = useCallback(() => {
-    if (!diffSelectedAbsPath) return;
-    const relPath = toDisplayPath(diffSelectedAbsPath);
-    if (!relPath || relPath === diffSelectedAbsPath) return;
-    window.dispatchEvent(new CustomEvent("xcoding:openFile", { detail: { relPath } }));
-  }, [diffSelectedAbsPath, toDisplayPath]);
+  const markdownComponents = useClaudeMarkdownComponents({ slot, onOpenUrl, onOpenFile, pushSystemMessage });
 
   const isCommandMenuOpen = commandMenuMode !== null;
   const suppressCommandFilter = commandMenuMode?.kind === "slashToken";
@@ -1222,33 +782,6 @@ export default function ClaudePanel({ slot, projectRootPath, onOpenUrl, onOpenFi
     const body = formatAtMentionBody(ctx.relPath, range);
     setAttachedFiles((prev) => (prev.includes(body) ? prev : [...prev, body]));
   }, [pushSystemMessage]);
-
-  function findWordBounds(text: string, cursor: number) {
-    const i = Math.max(0, Math.min(text.length, cursor));
-    let start = i;
-    while (start > 0 && !/\s/.test(text[start - 1] || "")) start -= 1;
-    let end = i;
-    while (end < text.length && !/\s/.test(text[end] || "")) end += 1;
-    return { start, end };
-  }
-
-  function findSlashToken(text: string, cursor: number) {
-    const { start, end } = findWordBounds(text, cursor);
-    const token = text.slice(start, end);
-    if (!token.startsWith("/")) return null;
-    if (start > 0 && !/\s/.test(text[start - 1] || "")) return null;
-    const query = token.slice(1);
-    return { start, end, token, query };
-  }
-
-  function findAtToken(text: string, cursor: number) {
-    const { start, end } = findWordBounds(text, cursor);
-    const token = text.slice(start, end);
-    if (!token.startsWith("@")) return null;
-    if (start > 0 && !/\s/.test(text[start - 1] || "")) return null;
-    const query = token.slice(1);
-    return { start, end, token, query };
-  }
 
   const insertOrReplaceSlashCommand = useCallback(
     (raw: string) => {
