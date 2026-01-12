@@ -67,7 +67,7 @@ export const zhCN = {
   workspaceEmptyTitle: "尚未打开编辑器",
   workspaceEmptyHint: "从左侧资源管理器打开文件，或新建预览/终端标签。",
   editorPlaceholder: "拖拽标签或打开文件开始。",
-  chatPlaceholder: "这里是类似 Copilot 的对话区（发送/停止/暂存）。",
+  chatPlaceholder: "在这里开始对话。",
   ask: "提问…",
   send: "发送",
   stop: "停止",

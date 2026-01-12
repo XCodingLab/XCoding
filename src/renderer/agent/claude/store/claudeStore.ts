@@ -14,6 +14,7 @@ export type ClaudeApproval = {
   toolInput: any;
   suggestions?: any;
   toolUseId?: string;
+  preview?: any;
 };
 
 export type ClaudeStore = {
@@ -26,6 +27,7 @@ export type ClaudeStore = {
     activeAssistantMessageId: string | null;
     activeContentBlockIndex: number | null;
     activeTextBuffer: string;
+    activeThinkingBuffer: string;
   };
 };
 
@@ -36,7 +38,7 @@ export function createClaudeStore(): ClaudeStore {
     stderr: [],
     logs: [],
     status: { state: "idle" },
-    streaming: { activeAssistantMessageId: null, activeContentBlockIndex: null, activeTextBuffer: "" }
+    streaming: { activeAssistantMessageId: null, activeContentBlockIndex: null, activeTextBuffer: "", activeThinkingBuffer: "" }
   };
 }
 
@@ -56,6 +58,17 @@ function appendToAssistant(store: ClaudeStore, text: string) {
   msg.text += text;
 }
 
+function appendThinkingToAssistant(store: ClaudeStore, thinking: string) {
+  const value = String(thinking ?? "");
+  if (!value) return;
+  const id = ensureActiveAssistant(store);
+  const msg = store.messages.find((m) => m.id === id);
+  if (!msg) return;
+  const meta = msg.meta && typeof msg.meta === "object" ? (msg.meta as any) : {};
+  meta.thinking = String(meta.thinking ?? "") + value;
+  msg.meta = meta;
+}
+
 // Best-effort parsing of Anthropic Messages stream events as emitted by the SDK.
 export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
   if (!ev || typeof ev !== "object") return;
@@ -66,11 +79,6 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
   if (outerType === "system") {
     const subtype = String((ev as any).subtype ?? "");
     if (subtype === "init") {
-      store.messages.push({
-        id: `sys-${Date.now()}`,
-        role: "system",
-        text: `Claude Code ${String((ev as any).claude_code_version ?? "")} (${String((ev as any).model ?? "")})`
-      });
       return;
     }
     if (subtype === "status") return;
@@ -85,8 +93,6 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
   }
 
   if (outerType === "auth_status") {
-    const lines = Array.isArray((ev as any).output) ? (ev as any).output.map((l: any) => String(l)) : [];
-    if (lines.length) store.messages.push({ id: `auth-${Date.now()}`, role: "system", text: lines.join("\n") });
     return;
   }
 
@@ -94,6 +100,12 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
     // Render as a lightweight system line.
     const name = String((ev as any).tool_name ?? "");
     store.messages.push({ id: `toolp-${Date.now()}`, role: "system", text: `Running tool: ${name}` });
+    return;
+  }
+
+  if (outerType === "thinking") {
+    const delta = typeof (ev as any).text === "string" ? (ev as any).text : typeof (ev as any).thinking === "string" ? (ev as any).thinking : "";
+    if (delta) appendThinkingToAssistant(store, delta);
     return;
   }
 
@@ -110,10 +122,18 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
     const msg = (ev as any).message;
     const content = Array.isArray(msg?.content) ? msg.content : [];
     const textBlocks = content.filter((b: any) => b && b.type === "text" && typeof b.text === "string").map((b: any) => b.text).join("");
+    const thinkingBlocks = content
+      .filter((b: any) => b && b.type === "thinking" && typeof b.thinking === "string")
+      .map((b: any) => b.thinking)
+      .join("");
     const toolBlocks = content.filter((b: any) => b && b.type === "tool_use");
     if (textBlocks) {
       ensureActiveAssistant(store);
       appendToAssistant(store, textBlocks);
+    }
+    if (thinkingBlocks) {
+      ensureActiveAssistant(store);
+      appendThinkingToAssistant(store, thinkingBlocks);
     }
     for (const tb of toolBlocks) {
       const name = String(tb?.name ?? "tool");
@@ -137,7 +157,7 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
     store.streaming.activeAssistantMessageId = null;
     store.streaming.activeContentBlockIndex = null;
     store.streaming.activeTextBuffer = "";
-    ensureActiveAssistant(store);
+    store.streaming.activeThinkingBuffer = "";
     return;
   }
 
@@ -146,6 +166,12 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
     const block = (ev as any).content_block;
     if (block && block.type === "text" && typeof block.text === "string" && block.text) {
       appendToAssistant(store, block.text);
+    }
+    if (block && block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
+      appendThinkingToAssistant(store, block.thinking);
+    }
+    if (block && block.type === "thinking" && typeof block.text === "string" && block.text) {
+      appendThinkingToAssistant(store, block.text);
     }
     return;
   }
@@ -158,6 +184,14 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
       appendToAssistant(store, delta.text);
       return;
     }
+    if (deltaType === "thinking_delta" && typeof (delta as any).thinking === "string") {
+      appendThinkingToAssistant(store, (delta as any).thinking);
+      return;
+    }
+    if (deltaType === "thinking_delta" && typeof (delta as any).text === "string") {
+      appendThinkingToAssistant(store, (delta as any).text);
+      return;
+    }
     // Ignore tool input streaming JSON; we'll render tool_use blocks from the final assistant message instead.
     return;
   }
@@ -166,6 +200,7 @@ export function applyClaudeStreamEvent(store: ClaudeStore, ev: any) {
     store.streaming.activeAssistantMessageId = null;
     store.streaming.activeContentBlockIndex = null;
     store.streaming.activeTextBuffer = "";
+    store.streaming.activeThinkingBuffer = "";
     return;
   }
 }

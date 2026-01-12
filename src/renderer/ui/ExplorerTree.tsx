@@ -50,6 +50,20 @@ function parentDir(rel: string) {
   return idx === -1 ? "" : cleaned.slice(0, idx);
 }
 
+function normalizeRelPath(input: string) {
+  return String(input ?? "")
+    .trim()
+    .replace(/^([/\\\\])+/, "")
+    .replace(/[\\\\]+/g, "/")
+    .replace(/\/+$/, "");
+}
+
+function cssEscapeSelector(value: string) {
+  const css = (globalThis as any)?.CSS;
+  if (css && typeof css.escape === "function") return css.escape(String(value));
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
 function sortEntries(entries: FsEntry[]) {
   return [...entries].sort((a, b) => {
     if (a.kind !== b.kind) return a.kind === "dir" ? -1 : 1;
@@ -79,6 +93,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
   const refreshTimerRef = useRef<number | null>(null);
   const [renderLimit, setRenderLimit] = useState(450);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pendingScrollToRelRef = useRef<string | null>(null);
   const becameVisibleRef = useRef<boolean>(isVisible);
 
   async function loadDir(dir: string) {
@@ -214,12 +229,42 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
   }
 
   async function ensureDirExpanded(dir: string) {
-    if (expanded.has(dir)) return;
-    setExpanded((prev) => new Set(prev).add(dir));
+    const alreadyExpanded = expandedRef.current.has(dir);
+    if (!alreadyExpanded) setExpanded((prev) => new Set(prev).add(dir));
     const wasDirty = dirtyDirsRef.current.has(dir);
     if (wasDirty) dirtyDirsRef.current.delete(dir);
-    if ((wasDirty || !cache[dir]?.entries) && !cache[dir]?.loading) await loadDir(dir);
+    const node = cacheRef.current[dir];
+    if ((wasDirty || !node?.entries) && !node?.loading) await loadDir(dir);
   }
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { slot?: number; relPath?: string; kind?: "dir" | "file" } | undefined;
+      if (!detail || detail.slot !== slot) return;
+      const raw = typeof detail.relPath === "string" ? detail.relPath : "";
+      const kind = detail.kind === "dir" ? "dir" : detail.kind === "file" ? "file" : "dir";
+      const target = normalizeRelPath(raw);
+      if (!target) return;
+
+      void (async () => {
+        const dirToExpand = kind === "dir" ? target : parentDir(target);
+        if (dirToExpand) {
+          const parts = dirToExpand.split("/").filter(Boolean);
+          let cur = "";
+          for (const part of parts) {
+            cur = cur ? `${cur}/${part}` : part;
+            await ensureDirExpanded(cur);
+          }
+          await ensureDirExpanded(dirToExpand);
+        }
+        if (kind === "dir") await ensureDirExpanded(target);
+        setSelectedRel(target);
+        pendingScrollToRelRef.current = target;
+      })();
+    };
+    window.addEventListener("xcoding:revealInExplorer", handler as any);
+    return () => window.removeEventListener("xcoding:revealInExplorer", handler as any);
+  }, [slot]);
 
   function closeMenu() {
     setMenu({ isOpen: false });
@@ -319,6 +364,29 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
     pushDirChildren("", 0);
     return out;
   }, [cache, expanded, inlineEdit]);
+
+  useEffect(() => {
+    const target = pendingScrollToRelRef.current;
+    if (!target) return;
+    const idx = rows.findIndex((r) => r.type === "entry" && r.rel === target);
+    if (idx === -1) return;
+    if (renderLimit < idx + 80) {
+      setRenderLimit((prev) => Math.min(rows.length || prev, Math.max(prev, idx + 160)));
+      return;
+    }
+
+    const el = scrollRef.current;
+    if (!el) return;
+    const targetEl = el.querySelector(`[data-rel="${cssEscapeSelector(target)}"]`);
+    if (targetEl && "scrollIntoView" in targetEl) {
+      try {
+        (targetEl as any).scrollIntoView({ block: "center" });
+      } catch {
+        // ignore
+      }
+    }
+    pendingScrollToRelRef.current = null;
+  }, [renderLimit, rows]);
 
   useEffect(() => {
     setRenderLimit((prev) => Math.min(prev, rows.length || 450));
@@ -460,6 +528,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
           return (
             <button
               key={rel}
+              data-rel={rel}
               className={[
                 "flex w-full items-center gap-1 truncate rounded px-2 py-0.5 text-left text-[12px]",
                 isSelected

@@ -220,6 +220,53 @@ declare global {
           permissionMode?: string;
           forkSession?: boolean;
         }) => Promise<{ ok: boolean; sessionId?: string | null; permissionMode?: string; reason?: string }>;
+        send: (payload: {
+          slot: number;
+          projectRootPath: string;
+          sessionId?: string | null;
+          permissionMode?: string;
+          forkSession?: boolean;
+          content: any;
+          isSynthetic?: boolean;
+        }) => Promise<{ ok: boolean; sessionId?: string | null; permissionMode?: string; reason?: string }>;
+        supportedCommands: (payload: {
+          slot: number;
+          projectRootPath: string;
+          sessionId?: string | null;
+          permissionMode?: string;
+        }) => Promise<
+          | { ok: true; commands: Array<{ name: string; description: string; argumentHint: string }> }
+          | { ok: false; reason: string }
+        >;
+        supportedModels: (payload: {
+          slot: number;
+          projectRootPath: string;
+          sessionId?: string | null;
+          permissionMode?: string;
+        }) => Promise<
+          | { ok: true; models: Array<{ value: string; displayName: string; description: string }> }
+          | { ok: false; reason: string }
+        >;
+        accountInfo: (payload: {
+          slot: number;
+          projectRootPath: string;
+          sessionId?: string | null;
+          permissionMode?: string;
+        }) => Promise<
+          | {
+              ok: true;
+              accountInfo: { email?: string; organization?: string; subscriptionType?: string; tokenSource?: string; apiKeySource?: string };
+            }
+          | { ok: false; reason: string }
+        >;
+        setModel: (payload: { slot: number; model?: string }) => Promise<{ ok: boolean; reason?: string }>;
+        setMaxThinkingTokens: (payload: { slot: number; maxThinkingTokens: number | null }) => Promise<{ ok: boolean; reason?: string }>;
+        buildOpenInTerminalCommand: (payload: {
+          slot: number;
+          resumeSessionId?: string | null;
+          initialInput?: string | null;
+          extraArgs?: string[];
+        }) => Promise<{ ok: boolean; command?: string; reason?: string; slot?: number; claudeCodeVersion?: string }>;
         getStatus: (payload: { slot: number }) => Promise<{
           ok: boolean;
           status?: { state: "idle" | "starting" | "ready" | "exited" | "error"; error?: string };
@@ -228,7 +275,15 @@ declare global {
           permissionMode?: string;
           reason?: string;
         }>;
-        sendUserMessage: (payload: { slot: number; content: string }) => Promise<{ ok: boolean; reason?: string }>;
+        sendUserMessage: (payload: {
+          slot: number;
+          content: unknown;
+          isSynthetic?: boolean;
+          projectRootPath?: string;
+          sessionId?: string | null;
+          permissionMode?: string;
+          forkSession?: boolean;
+        }) => Promise<{ ok: boolean; reason?: string; sessionId?: string | null; permissionMode?: string }>;
         interrupt: (payload: { slot: number }) => Promise<{ ok: boolean; reason?: string }>;
         close: (payload: { slot: number }) => Promise<{ ok: boolean; reason?: string }>;
         setPermissionMode: (payload: { slot: number; mode: string }) => Promise<{ ok: boolean; reason?: string }>;
@@ -237,6 +292,7 @@ declare global {
           behavior: "allow" | "deny";
           updatedInput?: any;
           updatedPermissions?: any;
+          message?: string;
           interrupt?: boolean;
         }) => Promise<{ ok: boolean; reason?: string }>;
         historyList: (payload: { projectRootPath: string }) => Promise<{
@@ -250,7 +306,18 @@ declare global {
           sessionId: string;
           absPath: string;
         }) => Promise<
-          | { ok: true; original: string; modified: string; backupName?: string; messageId?: string }
+          | {
+              ok: true;
+              original: string;
+              modified: string;
+              backupName?: string;
+              messageId?: string;
+              relPath?: string;
+              added?: number;
+              removed?: number;
+              unifiedDiff?: string;
+              unifiedTruncated?: boolean;
+            }
           | { ok: false; reason: string; messageId?: string }
         >;
         mcpServerStatus: (payload: { slot: number }) => Promise<{ ok: boolean; servers?: Array<{ name: string; status: string }>; reason?: string }>;
@@ -261,7 +328,15 @@ declare global {
         }>;
         latestSnapshotFiles: (payload: { projectRootPath: string; sessionId: string }) => Promise<{
           ok: boolean;
-          files?: Array<{ absPath: string; backupName: string }>;
+          files?: Array<{
+            absPath: string;
+            backupName: string;
+            relPath?: string;
+            added?: number;
+            removed?: number;
+            truncated?: boolean;
+            error?: string;
+          }>;
           messageId?: string;
           reason?: string;
         }>;
@@ -275,6 +350,15 @@ declare global {
         listDir: (payload: { slot: number; dir: string }) => Promise<{
           ok: boolean;
           entries?: Array<{ name: string; kind: "dir" | "file"; ignored?: boolean }>;
+          reason?: string;
+        }>;
+        stat: (payload: { slot: number; path: string }) => Promise<{
+          ok: boolean;
+          exists?: boolean;
+          isFile?: boolean;
+          isDirectory?: boolean;
+          size?: number;
+          mtimeMs?: number;
           reason?: string;
         }>;
         searchPaths: (payload: { slot: number; query: string; limit?: number }) => Promise<{ ok: boolean; results?: string[]; reason?: string }>;
@@ -320,23 +404,12 @@ declare global {
         gitUnstage: (payload: { slot: number; paths: string[] }) => Promise<{ ok: boolean; reason?: string }>;
         gitDiscard: (payload: { slot: number; paths: string[]; includeUntracked?: boolean }) => Promise<{ ok: boolean; reason?: string }>;
         gitCommit: (payload: { slot: number; message: string; amend?: boolean }) => Promise<{ ok: boolean; commitHash?: string; reason?: string }>;
-        searchFiles: (payload: { slot: number; query: string; maxResults?: number; useGitignore?: boolean }) => Promise<{
+        searchFiles: (payload: { slot: number; query: string; maxResults?: number }) => Promise<{
           ok: boolean;
           results?: Array<{ path: string; name: string; relativePath: string; score: number }>;
           reason?: string;
         }>;
-        searchContent: (payload: {
-          slot: number;
-          query: string;
-          maxResults?: number;
-          caseSensitive?: boolean;
-          wholeWord?: boolean;
-          regex?: boolean;
-          filePattern?: string;
-          include?: string[];
-          exclude?: string[];
-          useGitignore?: boolean;
-        }) => Promise<{
+        searchContent: (payload: { slot: number; query: string; maxResults?: number }) => Promise<{
           ok: boolean;
           result?: {
             matches: Array<{ path: string; relativePath: string; line: number; column: number; content: string }>;

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import TerminalView from "./TerminalView";
 import { useI18n } from "./i18n";
 
-export type TerminalEntry = { id: string; title: string; sessionId?: string };
+export type TerminalEntry = { id: string; title: string; sessionId?: string; initialCommand?: string };
 
 export type PanelTabId = "terminal" | "previewConsole" | "previewNetwork";
 
@@ -717,6 +717,13 @@ export default function TerminalPanel({
                           onUpdate((prev) => ({
                             ...prev,
                             terminals: prev.terminals.map((t) => (t.id === term.id ? { ...t, sessionId } : t))
+                          }));
+                        }}
+                        initialCommand={term.initialCommand}
+                        onDidRunInitialCommand={() => {
+                          onUpdate((prev) => ({
+                            ...prev,
+                            terminals: prev.terminals.map((t) => (t.id === term.id ? { ...t, initialCommand: undefined } : t))
                           }));
                         }}
                         isActive

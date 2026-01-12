@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CaseSensitive, FileText, Filter, Regex, Search, WholeWord, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import ExplorerTree from "./ExplorerTree";
 import { useI18n } from "./i18n";
 import SearchPreviewPanel from "./SearchPreviewPanel";
@@ -18,24 +18,17 @@ type Props = {
 
 type SearchMode = "files" | "content";
 
-type SearchOptions = {
-  caseSensitive: boolean;
-  wholeWord: boolean;
-  regex: boolean;
-  useGitignore: boolean;
-  include: string;
-  exclude: string;
-  filePattern: string;
-};
-
 type FileSearchResult = { path: string; name: string; relativePath: string; score: number };
 type ContentSearchMatch = { path: string; relativePath: string; line: number; column: number; content: string };
 type ContentSearchResult = { matches: ContentSearchMatch[]; totalMatches: number; totalFiles: number; truncated: boolean };
 
+type ContentLineResult = { relativePath: string; line: number; column: number; content: string; matchCount: number };
+type ContentFileGroup = { relativePath: string; matchCount: number; lines: Array<ContentLineResult & { index: number }> };
+type ContentIndex = { files: ContentFileGroup[]; flat: ContentLineResult[] };
+
 type SearchState = {
   mode: SearchMode;
   query: string;
-  options: SearchOptions;
   fileResults: FileSearchResult[];
   contentResults: ContentSearchResult | null;
   selectedIndex: number;
@@ -44,13 +37,44 @@ type SearchState = {
   dividerY: number;
 };
 
-function parseGlobInput(raw: string): string[] {
-  const input = raw.trim();
-  if (!input) return [];
-  return input
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+function buildContentIndex(result: ContentSearchResult | null): ContentIndex {
+  const matches = result?.matches ?? [];
+  if (!matches.length) return { files: [], flat: [] };
+
+  const byFile = new Map<string, { matchCount: number; byLine: Map<number, ContentLineResult> }>();
+  for (const m of matches) {
+    const relativePath = String(m.relativePath ?? "");
+    const line = Number(m.line ?? 0);
+    if (!relativePath || line <= 0) continue;
+    const column = Math.max(1, Number(m.column ?? 1));
+    const content = String(m.content ?? "");
+
+    const file = byFile.get(relativePath) ?? { matchCount: 0, byLine: new Map() };
+    file.matchCount += 1;
+    const existing = file.byLine.get(line);
+    if (!existing) {
+      file.byLine.set(line, { relativePath, line, column, content, matchCount: 1 });
+    } else {
+      existing.matchCount += 1;
+      if (column < existing.column) existing.column = column;
+    }
+    if (!byFile.has(relativePath)) byFile.set(relativePath, file);
+  }
+
+  const flat: ContentLineResult[] = [];
+  const files: ContentFileGroup[] = [];
+  const sortedFiles = [...byFile.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [relativePath, file] of sortedFiles) {
+    const lines = [...file.byLine.values()].sort((a, b) => a.line - b.line);
+    const linesWithIndex = lines.map((l) => {
+      const index = flat.length;
+      flat.push(l);
+      return { ...l, index };
+    });
+    files.push({ relativePath, matchCount: file.matchCount, lines: linesWithIndex });
+  }
+
+  return { files, flat };
 }
 
 export default function ExplorerPanel({ slot, projectId, rootPath, isBound, width, onOpenFile, onOpenGitDiff, onOpenFolder, onDeletedPaths }: Props) {
@@ -58,13 +82,10 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
   const [activeView, setActiveView] = useState<"explorer" | "search">("explorer");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
-  const [replaceValue, setReplaceValue] = useState("");
-  const [replaceStatus, setReplaceStatus] = useState<string>("");
 
   const [search, setSearch] = useState<SearchState>(() => ({
     mode: "files",
     query: "",
-    options: { caseSensitive: false, wholeWord: false, regex: false, useGitignore: true, include: "", exclude: "", filePattern: "" },
     fileResults: [],
     contentResults: null,
     selectedIndex: 0,
@@ -80,15 +101,12 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
     setSearch({
       mode: "files",
       query: "",
-      options: { caseSensitive: false, wholeWord: false, regex: false, useGitignore: true, include: "", exclude: "", filePattern: "" },
       fileResults: [],
       contentResults: null,
       selectedIndex: 0,
       loading: false,
       dividerY: 55
     });
-    setReplaceValue("");
-    setReplaceStatus("");
   }, [slot]);
 
   useEffect(() => {
@@ -101,6 +119,16 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
     };
     window.addEventListener("xcoding:openSearch", handler as any);
     return () => window.removeEventListener("xcoding:openSearch", handler as any);
+  }, [slot]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { slot?: number } | undefined;
+      if (!detail || detail.slot !== slot) return;
+      setActiveView("explorer");
+    };
+    window.addEventListener("xcoding:revealInExplorer", handler as any);
+    return () => window.removeEventListener("xcoding:revealInExplorer", handler as any);
   }, [slot]);
 
   useEffect(() => {
@@ -117,7 +145,7 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
       setSearch((s) => ({ ...s, loading: true, error: undefined }));
       if (search.mode === "files") {
         void window.xcoding.project
-          .searchFiles({ slot, query: q, maxResults: 120, useGitignore: search.options.useGitignore })
+          .searchFiles({ slot, query: q, maxResults: 120 })
           .then((res) => {
             if (requestSeqRef.current !== seq) return;
             if (!res.ok) {
@@ -125,26 +153,19 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
               return;
             }
             setSearch((s) => ({ ...s, loading: false, error: undefined, fileResults: res.results ?? [], contentResults: null, selectedIndex: 0 }));
+          })
+          .catch((e) => {
+            if (requestSeqRef.current !== seq) return;
+            setSearch((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : String(e) }));
           });
         return;
       }
-
-      const include = parseGlobInput(search.options.include);
-      const exclude = parseGlobInput(search.options.exclude);
-      const filePattern = search.options.filePattern.trim() || undefined;
 
       void window.xcoding.project
         .searchContent({
           slot,
           query: q,
-          maxResults: 600,
-          caseSensitive: search.options.caseSensitive,
-          wholeWord: search.options.wholeWord,
-          regex: search.options.regex,
-          filePattern,
-          include,
-          exclude,
-          useGitignore: search.options.useGitignore
+          maxResults: 600
         })
         .then((res) => {
           if (requestSeqRef.current !== seq) return;
@@ -153,17 +174,23 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
             return;
           }
           setSearch((s) => ({ ...s, loading: false, error: undefined, fileResults: [], contentResults: res.result ?? null, selectedIndex: 0 }));
+        })
+        .catch((e) => {
+          if (requestSeqRef.current !== seq) return;
+          setSearch((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : String(e) }));
         });
     }, 180);
     return () => {
       if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
     };
-  }, [activeView, isBound, search.mode, search.options, search.query, slot]);
+  }, [activeView, isBound, search.mode, search.query, slot]);
+
+  const contentIndex = useMemo(() => buildContentIndex(search.contentResults), [search.contentResults]);
 
   const selectedItem = useMemo(() => {
     if (search.mode === "files") return search.fileResults[search.selectedIndex] ?? null;
-    return search.contentResults?.matches?.[search.selectedIndex] ?? null;
-  }, [search.contentResults?.matches, search.fileResults, search.mode, search.selectedIndex]);
+    return contentIndex.flat[search.selectedIndex] ?? null;
+  }, [contentIndex.flat, search.fileResults, search.mode, search.selectedIndex]);
 
   function openSelected() {
     if (!selectedItem) return;
@@ -172,45 +199,6 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
       return;
     }
     onOpenFile(selectedItem.relativePath, selectedItem.line, selectedItem.column);
-  }
-
-  async function replaceAll() {
-    if (!isBound) return;
-    const q = search.query.trim();
-    if (!q || search.mode !== "content") return;
-    const ok = window.confirm(`Replace all matches of "${q}"?`);
-    if (!ok) return;
-
-    setReplaceStatus("Replacing…");
-    const include = parseGlobInput(search.options.include);
-    const exclude = parseGlobInput(search.options.exclude);
-    const filePattern = search.options.filePattern.trim() || undefined;
-    const res = await window.xcoding.project.replaceContent({
-      slot,
-      query: q,
-      replace: replaceValue,
-      caseSensitive: search.options.caseSensitive,
-      wholeWord: search.options.wholeWord,
-      regex: search.options.regex,
-      filePattern,
-      include,
-      exclude,
-      useGitignore: search.options.useGitignore,
-      maxFiles: 200,
-      maxMatches: 5000,
-      maxFileSize: "2M"
-    });
-    if (!res.ok) {
-      setReplaceStatus(res.reason ?? "replace_failed");
-      return;
-    }
-    const result = res.result;
-    setReplaceStatus(
-      result ? `Replaced ${result.changedMatches} matches in ${result.changedFiles} files.` : "Replace finished."
-    );
-    // Force a refresh of search results.
-    setSearch((s) => ({ ...s, query: `${s.query} ` }));
-    window.setTimeout(() => setSearch((s) => ({ ...s, query: s.query.trimEnd() })), 0);
   }
 
   function handleDividerMouseDown(e: React.MouseEvent) {
@@ -286,8 +274,8 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
                 }
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
+                  const count = search.mode === "files" ? search.fileResults.length : contentIndex.flat.length;
                   setSearch((s) => {
-                    const count = s.mode === "files" ? s.fileResults.length : s.contentResults?.matches.length ?? 0;
                     if (count <= 0) return s;
                     return { ...s, selectedIndex: Math.min(count - 1, s.selectedIndex + 1) };
                   });
@@ -321,135 +309,32 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
 
           {activeView === "search" ? (
             <div className="mt-3 flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1">
-                  <button
-                    className={[
-                      "rounded px-2 py-1 text-[11px]",
-                      search.mode === "files"
-                        ? "bg-[var(--vscode-sideBarSectionHeader-background)] text-[var(--vscode-foreground)]"
-                        : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                    ].join(" ")}
-                    onClick={() => setSearch((s) => ({ ...s, mode: "files", selectedIndex: 0 }))}
-                    type="button"
-                  >
-                    {t("files")}
-                  </button>
-                  <button
-                    className={[
-                      "rounded px-2 py-1 text-[11px]",
-                      search.mode === "content"
-                        ? "bg-[var(--vscode-sideBarSectionHeader-background)] text-[var(--vscode-foreground)]"
-                        : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                    ].join(" ")}
-                    onClick={() => setSearch((s) => ({ ...s, mode: "content", selectedIndex: 0 }))}
-                    type="button"
-                  >
-                    {t("search")}
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    className={[
-                      "rounded p-1",
-                      search.options.caseSensitive
-                        ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
-                        : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                    ].join(" ")}
-                    onClick={() => setSearch((s) => ({ ...s, options: { ...s.options, caseSensitive: !s.options.caseSensitive } }))}
-                    type="button"
-                    title="Match case"
-                  >
-                    <CaseSensitive className="h-4 w-4" />
-                  </button>
-                  <button
-                    className={[
-                      "rounded p-1",
-                      search.options.wholeWord
-                        ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
-                        : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                    ].join(" ")}
-                    onClick={() => setSearch((s) => ({ ...s, options: { ...s.options, wholeWord: !s.options.wholeWord } }))}
-                    type="button"
-                    title="Match whole word"
-                  >
-                    <WholeWord className="h-4 w-4" />
-                  </button>
-                  <button
-                    className={[
-                      "rounded p-1",
-                      search.options.regex
-                        ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
-                        : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                    ].join(" ")}
-                    onClick={() => setSearch((s) => ({ ...s, options: { ...s.options, regex: !s.options.regex } }))}
-                    type="button"
-                    title="Use regular expression"
-                  >
-                    <Regex className="h-4 w-4" />
-                  </button>
-                  <button
-                    className={[
-                      "rounded p-1",
-                      search.options.useGitignore
-                        ? "bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]"
-                        : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                    ].join(" ")}
-                    onClick={() => setSearch((s) => ({ ...s, options: { ...s.options, useGitignore: !s.options.useGitignore } }))}
-                    type="button"
-                    title="Use .gitignore"
-                  >
-                    <Filter className="h-4 w-4" />
-                  </button>
-                </div>
+              <div className="flex items-center gap-1">
+                <button
+                  className={[
+                    "rounded px-2 py-1 text-[11px]",
+                    search.mode === "files"
+                      ? "bg-[var(--vscode-sideBarSectionHeader-background)] text-[var(--vscode-foreground)]"
+                      : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                  ].join(" ")}
+                  onClick={() => setSearch((s) => ({ ...s, mode: "files", selectedIndex: 0 }))}
+                  type="button"
+                >
+                  {t("files")}
+                </button>
+                <button
+                  className={[
+                    "rounded px-2 py-1 text-[11px]",
+                    search.mode === "content"
+                      ? "bg-[var(--vscode-sideBarSectionHeader-background)] text-[var(--vscode-foreground)]"
+                      : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                  ].join(" ")}
+                  onClick={() => setSearch((s) => ({ ...s, mode: "content", selectedIndex: 0 }))}
+                  type="button"
+                >
+                  {t("search")}
+                </button>
               </div>
-
-              {search.mode === "content" ? (
-                <div className="grid gap-2">
-                  <input
-                    className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
-                    placeholder="files to include (glob, comma-separated)"
-                    value={search.options.include}
-                    onChange={(e) => setSearch((s) => ({ ...s, options: { ...s.options, include: e.target.value } }))}
-                  />
-                  <input
-                    className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
-                    placeholder="files to exclude (glob, comma-separated)"
-                    value={search.options.exclude}
-                    onChange={(e) => setSearch((s) => ({ ...s, options: { ...s.options, exclude: e.target.value } }))}
-                  />
-                  <input
-                    className="w-full rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
-                    placeholder="file pattern (e.g. *.ts)"
-                    value={search.options.filePattern}
-                    onChange={(e) => setSearch((s) => ({ ...s, options: { ...s.options, filePattern: e.target.value } }))}
-                  />
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 shrink-0 text-[var(--vscode-descriptionForeground)]" />
-                    <input
-                      className="min-w-0 flex-1 rounded bg-[var(--vscode-input-background)] px-2 py-1 text-[12px] text-[var(--vscode-input-foreground)] outline-none ring-1 ring-[var(--vscode-input-border)] focus:ring-[var(--vscode-focusBorder)]"
-                      placeholder="Replace…"
-                      value={replaceValue}
-                      onChange={(e) => setReplaceValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.nativeEvent.isComposing) return;
-                        if (e.key === "Enter") void replaceAll();
-                      }}
-                    />
-                    <button
-                      className="rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-1 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)] disabled:opacity-50"
-                      type="button"
-                      disabled={!search.query.trim() || search.loading}
-                      onClick={() => void replaceAll()}
-                      title="Replace all"
-                    >
-                      Replace All
-                    </button>
-                  </div>
-                  {replaceStatus ? <div className="text-[11px] text-[var(--vscode-descriptionForeground)]">{replaceStatus}</div> : null}
-                </div>
-              ) : null}
             </div>
           ) : null}
         </div>
@@ -502,28 +387,33 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
                         {r.relativePath}
                       </button>
                     ))
-                  : (search.contentResults?.matches ?? []).map((m, idx) => (
-                      <button
-                        key={`${m.relativePath}:${m.line}:${m.column}:${idx}`}
-                        className={[
-                          "block w-full px-3 py-1 text-left text-sm",
-                          idx === search.selectedIndex
-                            ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
-                            : "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
-                        ].join(" ")}
-                        onClick={() => setSearch((s) => ({ ...s, selectedIndex: idx }))}
-                        onDoubleClick={() => onOpenFile(m.relativePath, m.line, m.column)}
-                        type="button"
-                        title={`${m.relativePath}:${m.line}:${m.column}`}
-                      >
-                        <div className="truncate">
-                          <span className="text-[var(--vscode-descriptionForeground)]">{m.relativePath}</span>{" "}
-                          <span className="text-[var(--vscode-descriptionForeground)]">
-                            {m.line}:{m.column}
-                          </span>{" "}
-                          <span className="truncate">{m.content}</span>
+                  : contentIndex.files.map((file) => (
+                      <div key={file.relativePath} className="border-b border-[var(--vscode-panel-border)]">
+                        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--vscode-sideBarSectionHeader-background)] px-3 py-1 text-[11px] text-[var(--vscode-foreground)]">
+                          <span className="min-w-0 truncate">{file.relativePath}</span>
+                          <span className="shrink-0 text-[var(--vscode-descriptionForeground)]">{file.matchCount}</span>
                         </div>
-                      </button>
+                        {file.lines.map((m) => (
+                          <button
+                            key={`${m.relativePath}:${m.line}`}
+                            className={[
+                              "block w-full px-3 py-1 text-left text-sm",
+                              m.index === search.selectedIndex
+                                ? "bg-[var(--vscode-list-activeSelectionBackground)] text-[var(--vscode-list-activeSelectionForeground)]"
+                                : "text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]"
+                            ].join(" ")}
+                            onClick={() => setSearch((s) => ({ ...s, selectedIndex: m.index }))}
+                            onDoubleClick={() => onOpenFile(m.relativePath, m.line, m.column)}
+                            type="button"
+                            title={`${m.relativePath}:${m.line}`}
+                          >
+                            <div className="truncate">
+                              <span className="mr-2 text-[var(--vscode-descriptionForeground)]">{m.line}</span>
+                              <span className="truncate">{m.content}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     ))}
               </div>
 
@@ -535,17 +425,15 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
               />
 
               <div className="min-h-0 overflow-hidden rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]">
-                {search.mode === "content" && selectedItem && "line" in selectedItem ? (
+                {search.mode === "content" && selectedItem && !("score" in selectedItem) ? (
                   <SearchPreviewPanel
                     slot={slot}
                     path={selectedItem.relativePath}
                     line={selectedItem.line}
                     query={search.query}
-                    matchCase={search.options.caseSensitive}
-                    regex={search.options.regex}
                   />
                 ) : (
-                  <SearchPreviewPanel slot={slot} path={selectedItem ? ("score" in selectedItem ? selectedItem.relativePath : selectedItem.relativePath) : null} />
+                  <SearchPreviewPanel slot={slot} path={selectedItem ? selectedItem.relativePath : null} />
                 )}
               </div>
             </div>

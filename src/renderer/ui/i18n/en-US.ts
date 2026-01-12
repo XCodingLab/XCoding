@@ -67,7 +67,7 @@ export const enUS = {
   workspaceEmptyTitle: "No editor is open",
   workspaceEmptyHint: "Open a file from the Explorer, or create a Preview / Terminal tab.",
   editorPlaceholder: "Drop a tab or open a file to start.",
-  chatPlaceholder: "This is a Copilot-like chat panel (send / stop / staging).",
+  chatPlaceholder: "Start a conversation.",
   ask: "Ask…",
   send: "Send",
   stop: "Stop",

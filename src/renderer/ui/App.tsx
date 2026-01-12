@@ -1237,6 +1237,23 @@ export default function App() {
     });
   }
 
+  function openTerminalAndRun(slot: number, command: string, options?: { title?: string }) {
+    const cmd = String(command ?? "");
+    if (!cmd.trim()) return;
+    const title = String(options?.title ?? "").trim();
+    updateSlot(slot, (s) => {
+      const panel = s.terminalPanel ?? { isVisible: false, height: 260, activeTab: "terminal", terminals: [], viewIds: [], focusedView: 0 };
+      const id = `term-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const nextTitle = title || `Terminal ${panel.terminals.length + 1}`;
+      const nextTerminals = [...panel.terminals, { id, title: nextTitle, initialCommand: cmd }];
+      const viewIds = panel.viewIds.length ? [...panel.viewIds] : panel.terminals[0]?.id ? [panel.terminals[0].id] : [];
+      const ensuredViewIds = viewIds.length ? viewIds : [id];
+      const focusedView = Math.max(0, Math.min(ensuredViewIds.length - 1, panel.focusedView));
+      ensuredViewIds[focusedView] = id;
+      return { ...s, terminalPanel: { ...panel, isVisible: true, activeTab: "terminal", terminals: nextTerminals, viewIds: ensuredViewIds, focusedView } };
+    });
+  }
+
   function showPanelTab(tab: TerminalPanelState["activeTab"]) {
     updateSlot(activeProjectSlot, (s) => {
       const panel = s.terminalPanel ?? { isVisible: false, height: 260, activeTab: "terminal", terminals: [], viewIds: [], focusedView: 0 };
@@ -1765,6 +1782,7 @@ export default function App() {
                           onClose={() => { }}
                           projectRootPath={activeProjectPath}
                           terminalScrollback={terminalScrollback}
+                          onOpenTerminalAndRun={(command, options) => openTerminalAndRun(activeProjectSlot, command, options)}
                           onOpenUrl={(url) => openNewPreview(url)}
                           onOpenImage={(url) => openImageTab(url)}
                           onOpenFile={(relPath, line, column) => openFile(relPath, line, column)}
@@ -1979,6 +1997,7 @@ export default function App() {
                           onClose={() => setLayoutAndPersist((p) => ({ ...p, isChatVisible: false }))}
                           projectRootPath={projectPath}
                           terminalScrollback={terminalScrollback}
+                          onOpenTerminalAndRun={(command, options) => openTerminalAndRun(slotNum, command, options)}
                           onOpenUrl={(url) => openNewPreview(url)}
                           onOpenImage={(url) => openImageTab(url)}
                           onOpenFile={(relPath, line, column) => openFileInSlot(slotNum, relPath, line, column)}
@@ -2050,6 +2069,7 @@ export default function App() {
                 onClose={() => void ensureProjectStage("develop")}
                 projectRootPath={activeProjectPath}
                 terminalScrollback={terminalScrollback}
+                onOpenTerminalAndRun={(command, options) => openTerminalAndRun(activeProjectSlot, command, options)}
                 onOpenUrl={(url) => openNewPreview(url)}
                 onOpenImage={(url) => openImageTab(url)}
                 onOpenFile={(relPath, line, column) => openFile(relPath, line, column)}

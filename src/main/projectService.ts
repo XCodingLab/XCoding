@@ -205,7 +205,7 @@ function safeJoin(rel: string) {
 function shouldIgnore(rel: string) {
   const normalized = rel.replace(/^([/\\])+/, "").replace(/[\\]+/g, "/");
   const parts = normalized.split("/").filter(Boolean);
-  return parts.some((p) => p === ".git" || p === "node_modules" || p === "dist");
+  return parts.some((p) => p === ".git" || p === "node_modules");
 }
 
 const TEXT_EXTENSIONS = new Set([
@@ -271,7 +271,7 @@ async function walkDirectory(
 
   for (const entry of entries) {
     if (results.length >= maxResults) break;
-    if (entry.startsWith(".") || entry === "node_modules" || entry === "dist" || entry === "build") continue;
+    if (entry === ".git" || entry === "node_modules") continue;
     const fullPath = path.join(dir, entry);
     const relativePath = path.relative(rootPath, fullPath).replace(/[\\\\]+/g, "/");
     if (matcher?.isIgnored(relativePath)) continue;
@@ -351,14 +351,10 @@ function getRgArgs(params: {
 
   args.push(params.caseSensitive ? "--case-sensitive" : "--ignore-case");
 
-  // Built-in perf excludes (aligned with EnsoAI baseline).
+  // Keep this minimal to match VS Code defaults (the rest should be driven by ignore files).
   const excludes = new Set<string>([
     "!.git/**",
-    "!node_modules/**",
-    "!dist/**",
-    "!build/**",
-    "!*.lock",
-    "!package-lock.json"
+    "!node_modules/**"
   ]);
   for (const ex of parseGlobList(params.exclude)) excludes.add(`!${ex.replace(/^!+/, "")}`);
   for (const ex of excludes) args.push("-g", ex);
@@ -385,6 +381,36 @@ function getRgArgs(params: {
 
   args.push("--fixed-strings");
   return { args, patternAfterDoubleDash: params.query };
+}
+
+function normalizePosixRelativePath(input: string): string {
+  const raw = String(input ?? "")
+    .trim()
+    .replace(/^([/\\\\])+/, "")
+    .replace(/[\\\\]+/g, "/")
+    .replace(/^(?:\.\/)+/, "");
+
+  const normalized = path.posix.normalize(raw);
+  if (!normalized || normalized === ".") return "";
+  if (normalized === ".." || normalized.startsWith("../")) return "";
+  if (/^[a-zA-Z]:/.test(normalized)) return "";
+  return normalized;
+}
+
+function resolveRgReportedPath(rootPath: string, reportedPath: string): { absPath: string; relativePath: string } | null {
+  const raw = String(reportedPath ?? "").trim();
+  if (!raw) return null;
+
+  if (path.isAbsolute(raw)) {
+    const rel = path.relative(rootPath, raw);
+    const relativePath = normalizePosixRelativePath(rel);
+    if (!relativePath) return null;
+    return { absPath: raw, relativePath };
+  }
+
+  const relativePath = normalizePosixRelativePath(raw);
+  if (!relativePath) return null;
+  return { absPath: path.join(rootPath, relativePath), relativePath };
 }
 
 function escapeRegExpLiteral(input: string): string {
@@ -552,7 +578,7 @@ function normalizeGitRelPath(input: string) {
   const raw = String(input ?? "").replace(/[\\\\]+/g, "/").replace(/^([/\\\\])+/, "");
   const normalized = path.posix.normalize(raw);
   if (!normalized || normalized === ".") return "";
-  if (normalized.startsWith("..")) throw new Error("path_escape");
+  if (normalized === ".." || normalized.startsWith("../")) throw new Error("path_escape");
   return normalized;
 }
 
@@ -1340,7 +1366,7 @@ process.on("message", (msg: RequestMessage) => {
           reply({ id: msg.id, ok: true, result: { results: [] } });
           return;
         }
-        const matcher = msg.useGitignore === false ? null : gitignore;
+        const matcher = gitignore;
         const allFiles: { path: string; name: string; relativePath: string }[] = [];
         await walkDirectory(root, root, allFiles, maxResults * 10, matcher);
         const scored = allFiles
@@ -1363,11 +1389,11 @@ process.on("message", (msg: RequestMessage) => {
         if (!root) throw new Error("not_initialized");
         const query = String(msg.query ?? "").trim();
         const maxResults = typeof msg.maxResults === "number" ? Math.max(1, Math.min(5000, msg.maxResults)) : 500;
-        const caseSensitive = Boolean(msg.caseSensitive);
-        const wholeWord = Boolean(msg.wholeWord);
-        const regex = Boolean(msg.regex);
-        const useGitignore = msg.useGitignore !== false;
-        const filePattern = typeof msg.filePattern === "string" ? msg.filePattern.trim() : "";
+        // VS Code default semantics (non-advanced search): fixed string + ignore case.
+        const caseSensitive = false;
+        const wholeWord = false;
+        const regex = false;
+        const useGitignore = true;
 
         if (!query) {
           reply({ id: msg.id, ok: true, result: { matches: [], totalMatches: 0, totalFiles: 0, truncated: false } });
@@ -1386,9 +1412,6 @@ process.on("message", (msg: RequestMessage) => {
           caseSensitive,
           wholeWord,
           regex,
-          filePattern: filePattern || undefined,
-          include: msg.include,
-          exclude: msg.exclude,
           useGitignore
         });
         args.push("--");
@@ -1424,8 +1447,9 @@ process.on("message", (msg: RequestMessage) => {
                 const json = JSON.parse(line);
                 if (json.type !== "match") continue;
                 totalMatches += 1;
-                const absPath = String(json.data.path.text ?? "");
-                const relativePath = path.relative(root!, absPath).replace(/[\\\\]+/g, "/");
+                const resolved = resolveRgReportedPath(root!, String(json.data.path.text ?? ""));
+                if (!resolved) continue;
+                const { absPath, relativePath } = resolved;
                 fileSet.add(relativePath);
                 if (matches.length < maxResults) {
                   const col0 = Number(json.data.submatches?.[0]?.start ?? 0);
@@ -1456,18 +1480,20 @@ process.on("message", (msg: RequestMessage) => {
                 const json = JSON.parse(buffer);
                 if (json.type === "match") {
                   totalMatches += 1;
-                  const absPath = String(json.data.path.text ?? "");
-                  const relativePath = path.relative(root!, absPath).replace(/[\\\\]+/g, "/");
-                  fileSet.add(relativePath);
-                  if (matches.length < maxResults) {
-                    const col0 = Number(json.data.submatches?.[0]?.start ?? 0);
-                    matches.push({
-                      path: absPath,
-                      relativePath,
-                      line: Number(json.data.line_number ?? 0),
-                      column: col0 + 1,
-                      content: String(json.data.lines?.text ?? "").replace(/\n$/, "")
-                    });
+                  const resolved = resolveRgReportedPath(root!, String(json.data.path.text ?? ""));
+                  if (resolved) {
+                    const { absPath, relativePath } = resolved;
+                    fileSet.add(relativePath);
+                    if (matches.length < maxResults) {
+                      const col0 = Number(json.data.submatches?.[0]?.start ?? 0);
+                      matches.push({
+                        path: absPath,
+                        relativePath,
+                        line: Number(json.data.line_number ?? 0),
+                        column: col0 + 1,
+                        content: String(json.data.lines?.text ?? "").replace(/\n$/, "")
+                      });
+                    }
                   }
                 }
               } catch {
@@ -1548,9 +1574,11 @@ process.on("message", (msg: RequestMessage) => {
             proc.on("error", () => resolve(""));
           });
           for (const line of stdout.split("\n")) {
-            const abs = line.trim();
-            if (!abs) continue;
-            filesToProcess.push(abs);
+            const candidate = line.trim();
+            if (!candidate) continue;
+            const resolved = resolveRgReportedPath(root!, candidate);
+            if (!resolved) continue;
+            filesToProcess.push(resolved.absPath);
             if (filesToProcess.length >= maxFiles) break;
           }
         } else {

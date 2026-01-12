@@ -10,6 +10,7 @@ type Props = {
   onClose: () => void;
 
   terminalScrollback: number;
+  onOpenTerminalAndRun: (command: string, options?: { title?: string }) => void;
   onOpenUrl: (url: string) => void;
   onOpenImage: (absPathOrUrl: string) => void;
   onOpenFile: (relPath: string, line?: number, column?: number) => void;
@@ -47,6 +48,7 @@ export default function ProjectChatPanel(props: Props) {
       onClose={props.onClose}
       projectRootPath={props.projectRootPath}
       terminalScrollback={props.terminalScrollback}
+      onOpenTerminalAndRun={props.onOpenTerminalAndRun}
       onOpenUrl={props.onOpenUrl}
       onOpenImage={props.onOpenImage}
       onOpenFile={props.onOpenFile}

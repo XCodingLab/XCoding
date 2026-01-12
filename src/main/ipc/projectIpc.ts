@@ -36,6 +36,12 @@ export function registerProjectIpc() {
     return { ok: true, entries: (res.result as any)?.entries ?? [] };
   });
 
+  ipcMain.handle("project:fsStat", async (_event, { slot, path: relPath }: { slot: number; path: string }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:stat", relPath });
+    if (!res.ok) return res;
+    return { ok: true, ...(res.result as any) };
+  });
+
   ipcMain.handle("project:searchPaths", async (_event, { slot, query, limit }: { slot: number; query: string; limit?: number }) => {
     const res = await forwardToProjectService(slot, { type: "fs:searchPaths", query, limit });
     if (!res.ok) return res;
@@ -104,8 +110,8 @@ export function registerProjectIpc() {
 
   ipcMain.handle(
     "project:searchFiles",
-    async (_event, { slot, query, maxResults, useGitignore }: { slot: number; query: string; maxResults?: number; useGitignore?: boolean }) => {
-      const res = await forwardToProjectService(slot, { type: "fs:searchFiles", query, maxResults, useGitignore });
+    async (_event, { slot, query, maxResults }: { slot: number; query: string; maxResults?: number }) => {
+      const res = await forwardToProjectService(slot, { type: "fs:searchFiles", query, maxResults });
       if (!res.ok) return res;
       return { ok: true, results: (res.result as any)?.results ?? [] };
     }
@@ -113,44 +119,8 @@ export function registerProjectIpc() {
 
   ipcMain.handle(
     "project:searchContent",
-    async (
-      _event,
-      {
-        slot,
-        query,
-        maxResults,
-        caseSensitive,
-        wholeWord,
-        regex,
-        filePattern,
-        include,
-        exclude,
-        useGitignore
-      }: {
-        slot: number;
-        query: string;
-        maxResults?: number;
-        caseSensitive?: boolean;
-        wholeWord?: boolean;
-        regex?: boolean;
-        filePattern?: string;
-        include?: string[];
-        exclude?: string[];
-        useGitignore?: boolean;
-      }
-    ) => {
-      const res = await forwardToProjectService(slot, {
-        type: "fs:searchContent",
-        query,
-        maxResults,
-        caseSensitive,
-        wholeWord,
-        regex,
-        filePattern,
-        include,
-        exclude,
-        useGitignore
-      });
+    async (_event, { slot, query, maxResults }: { slot: number; query: string; maxResults?: number }) => {
+      const res = await forwardToProjectService(slot, { type: "fs:searchContent", query, maxResults });
       if (!res.ok) return res;
       return { ok: true, result: res.result };
     }
