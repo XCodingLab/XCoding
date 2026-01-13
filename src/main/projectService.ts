@@ -117,12 +117,24 @@ const lspServers = new Map<LspLanguage, LspServer>();
 
 function resolvePyrightLangserverPath(): string | null {
   try {
-    const req = createRequire(path.join(process.cwd(), "package.json"));
+    const req = createRequire(path.join(__dirname, "..", "..", "package.json"));
     return req.resolve("pyright/langserver.index.js");
   } catch {
     // ignore
   }
   const candidate = path.join(process.cwd(), "node_modules", "pyright", "langserver.index.js");
+  if (fs.existsSync(candidate)) return candidate;
+  return null;
+}
+
+function resolveTypeScriptLanguageServerPath(): string | null {
+  try {
+    const req = createRequire(path.join(__dirname, "..", "..", "package.json"));
+    return req.resolve("typescript-language-server/lib/cli.mjs");
+  } catch {
+    // ignore
+  }
+  const candidate = path.join(process.cwd(), "node_modules", "typescript-language-server", "lib", "cli.mjs");
   if (fs.existsSync(candidate)) return candidate;
   return null;
 }
@@ -148,6 +160,10 @@ async function ensureLspServer(language: LspLanguage): Promise<LspServer> {
     const pyrightServer = resolvePyrightLangserverPath();
     if (!pyrightServer) throw new Error("pyright_langserver_not_found");
     proc = spawn(process.execPath, [pyrightServer, "--stdio"], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
+  } else if (language === "typescript") {
+    const tsServer = resolveTypeScriptLanguageServerPath();
+    if (!tsServer) throw new Error("typescript_language_server_not_found");
+    proc = spawn(process.execPath, [tsServer, "--stdio"], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
   } else {
     proc = spawn("gopls", ["-mode=stdio"], { cwd: root, stdio: ["pipe", "pipe", "pipe"] });
   }
@@ -780,6 +796,41 @@ function readUtf8FileLimited(absPath: string, maxBytes: number): { text: string;
   }
 }
 
+const DEFAULT_MAX_READ_BYTES = 2_000_000;
+
+function clampMaxReadBytes(input: unknown) {
+  const n = typeof input === "number" && Number.isFinite(input) ? Math.floor(input) : DEFAULT_MAX_READ_BYTES;
+  return Math.max(4 * 1024, Math.min(20 * 1024 * 1024, n));
+}
+
+function readFileSnapshot(absPath: string, maxBytes: number): { content: string; truncated: boolean; isBinary: boolean; size: number; mtimeMs: number } {
+  const st = fs.statSync(absPath);
+  const size = st.size ?? 0;
+  const mtimeMs = typeof st.mtimeMs === "number" ? st.mtimeMs : 0;
+  if (!st.isFile()) return { content: "", truncated: false, isBinary: false, size: 0, mtimeMs: 0 };
+  if (size <= 0) return { content: "", truncated: false, isBinary: false, size, mtimeMs };
+
+  const clampedMax = clampMaxReadBytes(maxBytes);
+  const truncated = size > clampedMax;
+  const toRead = truncated ? clampedMax : size;
+  if (toRead <= 0) return { content: "", truncated, isBinary: false, size, mtimeMs };
+
+  const fd = fs.openSync(absPath, "r");
+  try {
+    const buf = Buffer.alloc(toRead);
+    const read = fs.readSync(fd, buf, 0, toRead, 0);
+    const sliced = read === toRead ? buf : buf.subarray(0, read);
+    const isBinary = sliced.includes(0);
+    return { content: isBinary ? "" : sliced.toString("utf8"), truncated, isBinary, size, mtimeMs };
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 async function isGitBinaryPath(repoCwd: string, relPath: string) {
   // git diff --numstat returns "-" "-" for binary diffs.
   try {
@@ -924,7 +975,13 @@ process.on("message", (msg: RequestMessage) => {
         reply({ id: msg.id, ok: false, error: "file_not_found" });
         return;
       }
-      reply({ id: msg.id, ok: true, result: { content: fs.readFileSync(abs, "utf8") } });
+      const maxBytes = clampMaxReadBytes((msg as any).maxBytes);
+      try {
+        const snap = readFileSnapshot(abs, maxBytes);
+        reply({ id: msg.id, ok: true, result: snap });
+      } catch (e) {
+        reply({ id: msg.id, ok: false, error: e instanceof Error ? e.message : "read_failed" });
+      }
       return;
     }
 
@@ -1116,12 +1173,12 @@ process.on("message", (msg: RequestMessage) => {
           }
         }
 
-	        if (mode === "working" && statusLetter === "?") {
-	          const abs = safeJoin(relPath);
-	          const st = await stat(abs).catch(() => null);
-	          const isText = st?.isFile() && (TEXT_EXTENSIONS.has(path.extname(relPath).toLowerCase()) || (st?.size ?? 0) <= 200_000);
-	          if (!st?.isFile()) throw new Error("file_not_found");
-	          if (!isText) {
+        if (mode === "working" && statusLetter === "?") {
+          const abs = safeJoin(relPath);
+          const st = await stat(abs).catch(() => null);
+          const isText = st?.isFile() && (TEXT_EXTENSIONS.has(path.extname(relPath).toLowerCase()) || (st?.size ?? 0) <= 200_000);
+          if (!st?.isFile()) throw new Error("file_not_found");
+          if (!isText) {
             const header = [
               `diff --git a/${relPath} b/${relPath}`,
               "new file mode 100644",
@@ -1129,13 +1186,13 @@ process.on("message", (msg: RequestMessage) => {
               `+++ b/${relPath}`,
               `Binary files /dev/null and b/${relPath} differ`
             ];
-	            reply({ id: msg.id, ok: true, result: { diff: `${header.join("\n")}\n`, truncated: false } });
-	            return;
-	          }
-	          const limited = readUtf8FileLimited(abs, maxBytes);
-	          reply({ id: msg.id, ok: true, result: { diff: makeNewFileUnifiedDiff(relPath, limited.text), truncated: limited.truncated } });
-	          return;
-	        }
+            reply({ id: msg.id, ok: true, result: { diff: `${header.join("\n")}\n`, truncated: false } });
+            return;
+          }
+          const limited = readUtf8FileLimited(abs, maxBytes);
+          reply({ id: msg.id, ok: true, result: { diff: makeNewFileUnifiedDiff(relPath, limited.text), truncated: limited.truncated } });
+          return;
+        }
 
         const args = ["diff", "--no-color", "--no-ext-diff", ...(mode === "staged" ? ["--staged"] : []), "--", relPath];
         const diffRes = await runGitCapture(root, args, { timeoutMs: 10_000, maxBytes });
@@ -1166,14 +1223,14 @@ process.on("message", (msg: RequestMessage) => {
         const match = parsed.find((p) => normalizeGitRelPath(p.path) === relPath) ?? parsed[0] ?? null;
         const xy = match ? `${match.x}${match.y}` : "";
 
-	        if (mode === "working" && xy === "??") {
-	          const abs = safeJoin(relPath);
-	          const st = await stat(abs).catch(() => null);
-	          if (!st?.isFile()) throw new Error("file_not_found");
-	          const limited = readUtf8FileLimited(abs, maxBytes);
-	          reply({ id: msg.id, ok: true, result: { original: "", modified: limited.text, truncated: limited.truncated, isBinary: false } });
-	          return;
-	        }
+        if (mode === "working" && xy === "??") {
+          const abs = safeJoin(relPath);
+          const st = await stat(abs).catch(() => null);
+          if (!st?.isFile()) throw new Error("file_not_found");
+          const limited = readUtf8FileLimited(abs, maxBytes);
+          reply({ id: msg.id, ok: true, result: { original: "", modified: limited.text, truncated: limited.truncated, isBinary: false } });
+          return;
+        }
 
         // Binary detection: keep it simple (only for working tree diff).
         const isBinary = mode === "working" ? await isGitBinaryPath(repoCwd, relPath) : false;
@@ -1209,20 +1266,20 @@ process.on("message", (msg: RequestMessage) => {
           original = a.text || a2?.text || "";
           truncated = a.truncated || Boolean(a2?.truncated);
 
-	          const abs = safeJoin(relPath);
-	          const st = await stat(abs).catch(() => null);
-	          if (st?.isFile()) {
-	            try {
-	              const limited = readUtf8FileLimited(abs, maxBytes);
-	              modified = limited.text;
-	              truncated = truncated || limited.truncated;
-	            } catch {
-	              modified = "";
-	            }
-	          } else {
-	            modified = "";
-	          }
-	        }
+          const abs = safeJoin(relPath);
+          const st = await stat(abs).catch(() => null);
+          if (st?.isFile()) {
+            try {
+              const limited = readUtf8FileLimited(abs, maxBytes);
+              modified = limited.text;
+              truncated = truncated || limited.truncated;
+            } catch {
+              modified = "";
+            }
+          } else {
+            modified = "";
+          }
+        }
 
         reply({ id: msg.id, ok: true, result: { original, modified, truncated, isBinary: false } });
       })().catch((e) => {

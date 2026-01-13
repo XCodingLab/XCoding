@@ -1,4 +1,5 @@
-import { type DragEvent, type MouseEvent, useMemo, useRef, useState } from "react";
+import { type DragEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type PaneId = "A" | "B" | "C";
 
@@ -22,6 +23,8 @@ type Props<TTab extends { id: string }> = {
   onDropFile?: (toPane: PaneId, relPath: string, intent?: SplitIntent | null) => void;
   onCloseTab?: (pane: PaneId, tabId: string) => void;
   onTabDragStateChange?: (dragging: boolean) => void;
+  shouldShowTabContextMenu?: (pane: PaneId, tab: TTab) => boolean;
+  renderTabContextMenu?: (pane: PaneId, tab: TTab, closeMenu: () => void) => React.ReactNode;
   renderTabLabel: (tab: TTab) => string;
   renderTab: (pane: PaneId, tab: TTab) => React.ReactNode;
   renderEmpty?: (pane: PaneId) => React.ReactNode;
@@ -84,6 +87,8 @@ export default function LayoutManager<TTab extends { id: string }>({
   onDropFile,
   onCloseTab,
   onTabDragStateChange,
+  shouldShowTabContextMenu,
+  renderTabContextMenu,
   renderTabLabel,
   renderTab,
   renderEmpty
@@ -92,6 +97,10 @@ export default function LayoutManager<TTab extends { id: string }>({
   const resizingRef = useRef<null | "col" | "col2" | "row">(null);
   const [dragOverPane, setDragOverPane] = useState<PaneId | null>(null);
   const [dragIntent, setDragIntent] = useState<SplitIntent | null>(null);
+  const [tabMenu, setTabMenu] = useState<
+    | { isOpen: false }
+    | { isOpen: true; x: number; y: number; pane: PaneId; tabId: string }
+  >({ isOpen: false });
   const splitRef = useRef(split);
   splitRef.current = split;
 
@@ -134,6 +143,23 @@ export default function LayoutManager<TTab extends { id: string }>({
     e.dataTransfer.setData("application/x-xcoding-tab", JSON.stringify({ pane, tabId }));
     e.dataTransfer.effectAllowed = "move";
   }
+
+  function closeTabMenu() {
+    setTabMenu({ isOpen: false });
+  }
+
+  useEffect(() => {
+    if (!tabMenu.isOpen) return;
+    const onDown = () => closeTabMenu();
+    // Use bubble phase so menu item clicks can run before the menu closes.
+    // The menu container stops propagation to avoid closing when clicking inside.
+    window.addEventListener("mousedown", onDown, false);
+    window.addEventListener("scroll", onDown, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown, false);
+      window.removeEventListener("scroll", onDown, true);
+    };
+  }, [tabMenu.isOpen]);
 
   function onDragEndTab() {
     onTabDragStateChange?.(false);
@@ -205,6 +231,7 @@ export default function LayoutManager<TTab extends { id: string }>({
     const effectiveActiveTabId = p.tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId : p.tabs[0]?.id ?? "";
     const highlight = dragOverPane === pane ? "ring-1 ring-brand-primary z-10" : "";
     const hasTabs = p.tabs.length > 0;
+    const menuTab = tabMenu.isOpen ? p.tabs.find((t) => t.id === tabMenu.tabId) ?? null : null;
     return (
       <div
         key={pane}
@@ -224,6 +251,16 @@ export default function LayoutManager<TTab extends { id: string }>({
                   draggable
                   onDragStart={(e) => onDragStartTab(e, pane, tab.id)}
                   onDragEnd={onDragEndTab}
+                  onContextMenu={
+                    renderTabContextMenu
+                      ? (e) => {
+                          if (shouldShowTabContextMenu && !shouldShowTabContextMenu(pane, tab)) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setTabMenu({ isOpen: true, x: e.clientX, y: e.clientY, pane, tabId: tab.id });
+                        }
+                      : undefined
+                  }
                   className={[
                     "group flex max-w-[200px] items-center gap-2 rounded-t-md px-3 py-1.5 cursor-pointer transition-all relative top-[1px]",
                     isActive
@@ -249,6 +286,23 @@ export default function LayoutManager<TTab extends { id: string }>({
             })}
           </div>
         ) : null}
+
+        {tabMenu.isOpen && tabMenu.pane === pane && renderTabContextMenu && menuTab
+          ? createPortal(
+              <div
+                className="fixed z-50 min-w-[180px] rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] p-1 text-[11px] text-[var(--vscode-foreground)] shadow"
+                style={{
+                  left: Math.max(8, Math.min(tabMenu.x, (window.innerWidth || tabMenu.x) - 220)),
+                  top: Math.max(8, Math.min(tabMenu.y, (window.innerHeight || tabMenu.y) - 260))
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {renderTabContextMenu(pane, menuTab, closeTabMenu)}
+              </div>,
+              document.body
+            )
+          : null}
 
         <div className={["relative min-h-0 flex-1", hasTabs ? "" : "p-2"].join(" ")}>
           {hasTabs ? (

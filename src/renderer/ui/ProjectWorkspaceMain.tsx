@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Bug, Network, Eye, Monitor, Smartphone, Tablet, RefreshCw, ExternalLink } from "lucide-react";
+import { Bug, Network, Eye, EyeOff, Monitor, Smartphone, Tablet, RefreshCw, ExternalLink } from "lucide-react";
 import DiffView from "./DiffView";
 import { DiffViewer } from "../agent/shared";
 import CodexReviewDiffView from "./CodexReviewDiffView";
@@ -72,6 +72,35 @@ export default function ProjectWorkspaceMain(props: Props) {
     activePreviewTab
   } = props;
 
+  const closeAllTabsInPane = (pane: PaneId) => {
+    updateSlot(activeProjectSlot, (s) => {
+      const nextPanes: typeof s.panes = { ...s.panes, [pane]: { tabs: [], activeTabId: "" } };
+      return collapseEmptySplitPanes({ ...s, panes: nextPanes, activePane: pane });
+    });
+  };
+
+  const closeOtherTabsInPane = (pane: PaneId, keepTabId: string) => {
+    updateSlot(activeProjectSlot, (s) => {
+      const p = s.panes[pane];
+      const kept = p.tabs.find((t) => t.id === keepTabId);
+      const tabs = kept ? [kept] : [];
+      const nextPanes: typeof s.panes = { ...s.panes, [pane]: { tabs, activeTabId: kept ? kept.id : "" } };
+      return collapseEmptySplitPanes({ ...s, panes: nextPanes, activePane: pane });
+    });
+  };
+
+  const copyTabPath = async (relPath: string, mode: "abs" | "rel") => {
+    const rel = String(relPath ?? "");
+    if (!rel) return;
+    if (mode === "rel") {
+      await window.xcoding.os.copyText(rel);
+      return;
+    }
+    const root = String(activeProjectPath ?? "").replace(/\/+$/, "");
+    const abs = root ? `${root}/${rel.replace(/^\/+/, "")}` : rel;
+    await window.xcoding.os.copyText(abs);
+  };
+
   const visibleUi = useMemo(() => {
     const allow = (tab: AnyTab) => {
       if (workflowStage === "preview") return tab.type === "preview";
@@ -111,7 +140,66 @@ export default function ProjectWorkspaceMain(props: Props) {
               onTabDragStateChange={setIsDraggingTab}
               setSplit={(next) => updateSlot(activeProjectSlot, (s) => ({ ...s, layoutSplit: next }))}
               setActivePane={(pane) => updateSlot(activeProjectSlot, (s) => ({ ...s, activePane: pane }))}
+              shouldShowTabContextMenu={(_pane, tab) => tab.type === "file"}
+              renderTabContextMenu={(pane, tab, closeMenu) => {
+                if (tab.type !== "file") return null;
+                const relPath = typeof (tab as any).path === "string" ? String((tab as any).path) : "";
+                const canCopyAbs = Boolean(activeProjectPath);
+                return (
+                  <>
+                    <button
+                      className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                      type="button"
+                      onClick={() => {
+                        closeMenu();
+                        closeOtherTabsInPane(pane, tab.id);
+                      }}
+                    >
+                      {t("closeOtherTabs")}
+                    </button>
+                    <button
+                      className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                      type="button"
+                      onClick={() => {
+                        closeMenu();
+                        closeAllTabsInPane(pane);
+                      }}
+                    >
+                      {t("closeAllTabs")}
+                    </button>
+                    <div className="my-1 border-t border-[var(--vscode-panel-border)]" />
+                    <button
+                      className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)] disabled:opacity-50"
+                      type="button"
+                      disabled={!relPath || !canCopyAbs}
+                      onClick={() => {
+                        closeMenu();
+                        void copyTabPath(relPath, "abs");
+                      }}
+                    >
+                      {t("copyPath")}
+                    </button>
+                    <button
+                      className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)] disabled:opacity-50"
+                      type="button"
+                      disabled={!relPath}
+                      onClick={() => {
+                        closeMenu();
+                        void copyTabPath(relPath, "rel");
+                      }}
+                    >
+                      {t("copyRelativePath")}
+                    </button>
+                  </>
+                );
+              }}
               onActivateTab={(pane, tabId) => {
+                const tab = visibleUi.panes[pane]?.tabs.find((t2) => t2.id === tabId);
+                if (tab && tab.type === "file" && "path" in tab && typeof tab.path === "string") {
+                  window.dispatchEvent(
+                    new CustomEvent("xcoding:revealInExplorer", { detail: { slot: activeProjectSlot, relPath: tab.path, kind: "file" } })
+                  );
+                }
                 updateSlot(activeProjectSlot, (s) => ({
                   ...s,
                   activePane: pane,
@@ -283,36 +371,7 @@ export default function ProjectWorkspaceMain(props: Props) {
                       projectRootPath={activeProjectPath}
                       onOpenUrl={(url) => openNewPreview(url)}
                       onOpenFile={(rel) => openFile(rel)}
-                      onPreviewOnly={() => {
-                        updateSlot(activeProjectSlot, (s) => {
-                          const nextPanes: typeof s.panes = { ...s.panes };
-                          (Object.keys(nextPanes) as Array<keyof typeof nextPanes>).forEach((p) => {
-                            const prev = nextPanes[p];
-                            const filtered = prev.tabs.filter((t2) => !(t2.type === "file" && "path" in t2 && t2.path === tab.path));
-                            const activeStillExists = filtered.some((t2) => t2.id === prev.activeTabId);
-                            nextPanes[p] = { tabs: filtered, activeTabId: activeStillExists ? prev.activeTabId : filtered[0]?.id ?? "" };
-                          });
-                          return collapseEmptySplitPanes({ ...s, activePane: pane, panes: nextPanes });
-                        });
-                      }}
-                      onShowEditor={() => {
-                        updateSlot(activeProjectSlot, (s) => {
-                          const ensureMode = (m: LayoutMode) => (m === "1x1" || m === "1x2" ? ("2x1" as const) : m);
-                          const mode = ensureMode(s.layoutMode);
-                          const editorPane: PaneId = pane === "B" ? "A" : pane === "C" ? "B" : "B";
-                          const openInto = (base: SlotUiState, target: PaneId) => {
-                            const existing = base.panes[target].tabs.find((t2) => t2.type === "file" && "path" in t2 && t2.path === tab.path);
-                            if (existing) {
-                              return { ...base, activePane: target, panes: { ...base.panes, [target]: { ...base.panes[target], activeTabId: existing.id } } };
-                            }
-                            const id = `tab-file-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-                            const title = tab.path.split("/").pop() ?? tab.path;
-                            const next: AnyTab = { id, type: "file", title, path: tab.path, dirty: false };
-                            return { ...base, activePane: target, panes: { ...base.panes, [target]: { tabs: [...base.panes[target].tabs, next], activeTabId: id } } };
-                          };
-                          return openInto({ ...s, layoutMode: mode }, editorPane);
-                        });
-                      }}
+                      onClosePreview={() => closeTab(pane, tab.id)}
                     />
                   );
                 }
@@ -473,19 +532,37 @@ export default function ProjectWorkspaceMain(props: Props) {
                   );
                 if (tab.type === "gitDiff") return <GitDiffView slot={activeProjectSlot} path={tab.path} mode={tab.mode} />;
                 if (tab.type === "file") {
+                  const markdownPreviewTabId = `tab-md-preview:${tab.path}`;
+                  const markdownPreviewPane = (["A", "B", "C"] as const).find((p) =>
+                    visibleUi.panes[p].tabs.some((t2) => t2.type === "markdown" && t2.id === markdownPreviewTabId)
+                  );
+                  const isMarkdownPreviewOpen = Boolean(markdownPreviewPane);
+
                   const rightExtras =
-                    isMarkdownFilePath(tab.path) && activeProjectPath
-                      ? (
-                        <button
-                          className="flex items-center gap-1 rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-0.5 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
-                          type="button"
-                          onClick={() => openMarkdownPreview(tab.path)}
-                          title={t("openPreview")}
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
+                    isMarkdownFilePath(tab.path) && activeProjectPath ? (
+                        isMarkdownPreviewOpen ? (
+                          <button
+                            className="flex items-center gap-1 rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-0.5 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
+                            type="button"
+                            onClick={() => {
+                              if (!markdownPreviewPane) return;
+                              closeTab(markdownPreviewPane, markdownPreviewTabId);
+                            }}
+                            title={t("closePreview")}
+                          >
+                            <EyeOff className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-0.5 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
+                            type="button"
+                            onClick={() => openMarkdownPreview(tab.path)}
+                            title={t("openPreview")}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
                         )
-                      : null;
+                      ) : null;
 
                   return (
                     <FileEditor

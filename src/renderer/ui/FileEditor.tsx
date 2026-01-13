@@ -1,10 +1,11 @@
 import { Editor, loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { RotateCcw, Save, Eye } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { RotateCcw } from "lucide-react";
 import { ensureMonacoLanguage } from "../monacoSetup";
 import { classifyDiffLine, type DiffLineKind } from "../diffSupport";
 import { languageFromPath, shouldEnableLsp } from "../languageSupport";
+import { useWorkingCopy } from "../editor/workingCopy/useWorkingCopy";
 import { useI18n } from "./i18n";
 import { useUiTheme } from "./UiThemeContext";
 
@@ -20,17 +21,12 @@ loader.config({ monaco });
 
 export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExtras }: Props) {
   const { t } = useI18n();
-  const { theme, monacoThemeName } = useUiTheme();
-  const [value, setValue] = useState<string | null>(null);
-  const valueRef = useRef<string>("");
-  const [error, setError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const savingRef = useRef(false);
+  const { monacoThemeName } = useUiTheme();
+  const { workingCopy, snapshot } = useWorkingCopy(slot, path);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const lastReportedDirtyRef = useRef<boolean | null>(null);
   const selectionDisposableRef = useRef<monaco.IDisposable | null>(null);
   const lastRevealNonceRef = useRef<string | null>(null);
-  const lspOpenRef = useRef<{ language: "python"; relPath: string } | null>(null);
-  const lspChangeTimerRef = useRef<number | null>(null);
   const previewTimerRef = useRef<number | null>(null);
   const diffDecorationsTimerRef = useRef<number | null>(null);
   const diffDecorationIdsByUriRef = useRef<Map<string, string[]>>(new Map());
@@ -40,10 +36,33 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
   const language = useMemo(() => languageFromPath(path), [path]);
   const modelUri = useMemo(() => monaco.Uri.from({ scheme: "xcoding", path: `/${path}` }).toString(), [path]);
   const isLspLanguage = shouldEnableLsp(language);
+  const lspServerLanguage = useMemo(() => {
+    if (!isLspLanguage) return null;
+    if (language === "python") return "python" as const;
+    if (language === "go") return "go" as const;
+    if (language === "typescript" || language === "javascript") return "typescript" as const;
+    return null;
+  }, [isLspLanguage, language]);
+  const dirty = Boolean(snapshot?.dirty);
+  const error = snapshot?.error ?? null;
+  const conflict = Boolean(snapshot?.conflict);
+  const orphaned = Boolean(snapshot?.orphaned);
+  const isBinary = Boolean(snapshot?.isBinary);
+  const truncated = Boolean(snapshot?.truncated);
+  const isLoading = snapshot ? snapshot.isLoading || !snapshot.isResolved : true;
+  const isUnsupported = isBinary || truncated;
 
   useEffect(() => {
     void ensureMonacoLanguage(language);
   }, [language]);
+
+  useEffect(() => {
+    // `onDirtyChange` is usually an inline callback that triggers state updates in the parent.
+    // Only report when `dirty` actually changes to avoid render loops.
+    if (lastReportedDirtyRef.current === dirty) return;
+    lastReportedDirtyRef.current = dirty;
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   const applyDiffDecorations = useCallback((editor: monaco.editor.IStandaloneCodeEditor) => {
     const model = editor.getModel();
@@ -108,49 +127,6 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
     }, 160);
   }, [applyDiffDecorations]);
 
-  async function load() {
-    const res = await window.xcoding.project.readFile({ slot, path });
-    if (!res.ok) {
-      setError(res.reason ?? "read_failed");
-      setValue("");
-      valueRef.current = "";
-      setDirty(false);
-      onDirtyChange?.(false);
-      return;
-    }
-    setError(null);
-    const content = res.content ?? "";
-    setValue(content);
-    valueRef.current = content;
-    setDirty(false);
-    onDirtyChange?.(false);
-    if (language === "diff") lastDecoratedVersionIdRef.current = -1;
-  }
-
-  async function save() {
-    if (savingRef.current) return;
-    if (value === null) return; // still loading
-    savingRef.current = true;
-    const res = await window.xcoding.project.writeFile({ slot, path, content: valueRef.current });
-    savingRef.current = false;
-    if (!res.ok) {
-      setError(res.reason ?? "save_failed");
-      window.dispatchEvent(new CustomEvent("xcoding:fileSaveResult", { detail: { slot, path, ok: false, reason: res.reason ?? "save_failed" } }));
-      return;
-    }
-    setError(null);
-    setDirty(false);
-    onDirtyChange?.(false);
-    window.dispatchEvent(new CustomEvent("xcoding:fileSaveResult", { detail: { slot, path, ok: true } }));
-  }
-
-  useEffect(() => {
-    setValue(null);
-    setDirty(false);
-    onDirtyChange?.(false);
-    void load();
-  }, [slot, path]);
-
   useEffect(() => {
     return () => {
       if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
@@ -170,41 +146,29 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
   }, [path]);
 
   useEffect(() => {
-    if (!isLspLanguage) return;
-    if (value === null && !error) return;
-    if (error) return;
-    const lspLanguage = "python";
+    if (!lspServerLanguage) return;
+    if (!workingCopy || !snapshot) return;
+    if (!snapshot.isResolved || snapshot.error) return;
+    if (snapshot.isBinary || snapshot.truncated) return;
+    const model = workingCopy.getModel();
+    const lspLanguage = lspServerLanguage;
 
-    if (!lspOpenRef.current || lspOpenRef.current.relPath !== path || lspOpenRef.current.language !== lspLanguage) {
-      lspOpenRef.current = { language: lspLanguage, relPath: path };
-      void window.xcoding.project.lspDidOpen({ slot, language: lspLanguage, path, languageId: lspLanguage, content: value ?? "" });
-      return;
-    }
-  }, [error, isLspLanguage, language, path, slot, value]);
+    let changeTimer: number | null = null;
+    void window.xcoding.project.lspDidOpen({ slot, language: lspLanguage, path, languageId: language, content: model.getValue() });
+    const disposable = model.onDidChangeContent(() => {
+      if (changeTimer != null) window.clearTimeout(changeTimer);
+      changeTimer = window.setTimeout(() => {
+        changeTimer = null;
+        void window.xcoding.project.lspDidChange({ slot, language: lspLanguage, path, content: model.getValue() });
+      }, 250);
+    });
 
-  useEffect(() => {
-    if (!isLspLanguage) return;
-    if (error) return;
-    if (!lspOpenRef.current || lspOpenRef.current.relPath !== path) return;
-    if (lspChangeTimerRef.current) window.clearTimeout(lspChangeTimerRef.current);
-    const lspLanguage = "python";
-    lspChangeTimerRef.current = window.setTimeout(() => {
-      void window.xcoding.project.lspDidChange({ slot, language: lspLanguage, path, content: value ?? "" });
-    }, 250);
     return () => {
-      if (lspChangeTimerRef.current) window.clearTimeout(lspChangeTimerRef.current);
+      if (changeTimer != null) window.clearTimeout(changeTimer);
+      disposable.dispose();
+      void window.xcoding.project.lspDidClose({ slot, language: lspLanguage, path });
     };
-  }, [error, isLspLanguage, language, path, slot, value]);
-
-  useEffect(() => {
-    return () => {
-      const open = lspOpenRef.current;
-      if (open && open.relPath === path) {
-        void window.xcoding.project.lspDidClose({ slot, language: open.language, path: open.relPath });
-      }
-      lspOpenRef.current = null;
-    };
-  }, [path, slot]);
+  }, [language, lspServerLanguage, path, slot, snapshot?.error, snapshot?.isResolved, snapshot?.isBinary, snapshot?.truncated, workingCopy]);
 
   useEffect(() => {
     const revealNonce = reveal?.nonce ?? null;
@@ -232,48 +196,78 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
       if (!detail) return;
       if (detail.slot !== slot) return;
       if (detail.path !== path) return;
-      void save();
+      if (!workingCopy) return;
+      if (isLoading || isUnsupported) return;
+      void workingCopy.save();
     };
     window.addEventListener("xcoding:requestSaveFile", handler as any);
     return () => window.removeEventListener("xcoding:requestSaveFile", handler as any);
-  }, [slot, path, value]);
+  }, [isLoading, isUnsupported, path, slot, workingCopy]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { slot?: number; path?: string; command?: string } | undefined;
+      if (!detail) return;
+      if (detail.slot !== slot) return;
+      if (detail.path !== path) return;
+      if (isUnsupported || isLoading) return;
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.focus();
+      const command = String(detail.command ?? "");
+      if (command === "find") editor.trigger("keyboard", "actions.find", null);
+      if (command === "replace") editor.trigger("keyboard", "editor.action.startFindReplaceAction", null);
+      if (command === "gotoDefinition") editor.trigger("keyboard", "editor.action.revealDefinition", null);
+    };
+    window.addEventListener("xcoding:requestEditorCommand", handler as any);
+    return () => window.removeEventListener("xcoding:requestEditorCommand", handler as any);
+  }, [isLoading, isUnsupported, path, slot]);
 
   useEffect(() => {
     if (language !== "diff") return;
+    lastDecoratedVersionIdRef.current = -1;
     scheduleDiffDecorations();
-  }, [language, scheduleDiffDecorations, path, value]);
+  }, [language, scheduleDiffDecorations, path, snapshot?.mtimeMs]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-2 py-1">
         <div className="min-w-0 truncate text-[11px] text-[var(--vscode-foreground)]">
           {path} {dirty ? <span className="text-amber-400">*</span> : null}
+          {orphaned ? <span className="ml-1 text-red-400">[{t("deleted")}]</span> : null}
+          {conflict ? <span className="ml-1 text-amber-400">[{t("diskChanged")}]</span> : null}
+          {isBinary ? <span className="ml-1 text-[var(--vscode-descriptionForeground)]">[{t("binaryFile")}]</span> : null}
+          {truncated ? <span className="ml-1 text-[var(--vscode-descriptionForeground)]">[{t("fileTooLarge")}]</span> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {error ? <div className="max-w-[220px] truncate text-[11px] text-red-400">{error}</div> : null}
-          <button
-            className="flex items-center gap-1 rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-0.5 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)] disabled:opacity-50"
-            disabled={!dirty}
-            onClick={() => void save()}
-            type="button"
-            title={t("save")}
-          >
-            <Save className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="flex items-center gap-1 rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-0.5 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
-            onClick={() => void load()}
-            type="button"
-            title={t("reload")}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
+          {conflict && workingCopy && !isLoading && !isUnsupported ? (
+            <button
+              className="flex items-center gap-1 rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-0.5 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
+              type="button"
+              onClick={() => {
+                if (!window.confirm(t("reloadDiscardConfirm"))) return;
+                void workingCopy.resolveFromDisk("reload");
+              }}
+              title={t("reloadDiscardConfirm")}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
           {rightExtras}
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        {value === null ? (
+        {isLoading ? (
           <div className="flex h-full items-center justify-center text-[11px] text-[var(--vscode-descriptionForeground)]">{t("loadingEditor")}</div>
+        ) : isUnsupported ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-[12px] text-[var(--vscode-descriptionForeground)]">
+            <div className="text-[13px] font-semibold text-[var(--vscode-foreground)]">{t("unsupportedFileTitle")}</div>
+            <div className="max-w-[520px]">
+              {isBinary ? t("unsupportedBinaryHint") : t("unsupportedLargeHint")}
+              {snapshot?.size ? <div className="mt-1">{t("fileSize")}: {Math.max(0, Number(snapshot.size))} bytes</div> : null}
+            </div>
+          </div>
         ) : (
           <Editor
             key={modelUri}
@@ -282,7 +276,7 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
             language={language}
             theme={monacoThemeName}
             keepCurrentModel
-            value={value ?? ""}
+            defaultValue=""
             onMount={(editor) => {
               editorRef.current = editor;
               selectionDisposableRef.current?.dispose();
@@ -300,56 +294,49 @@ export default function FileEditor({ slot, path, reveal, onDirtyChange, rightExt
                   })
                 );
               }
-            const emitSelection = () => {
-              const model = editor.getModel();
-              if (!model) return;
-              const selection = editor.getSelection();
-              const selections = editor.getSelections() ?? [];
+              const emitSelection = () => {
+                const model = editor.getModel();
+                if (!model) return;
+                const selection = editor.getSelection();
+                const selections = editor.getSelections() ?? [];
 
-              const activeSelectionContent = selection ? model.getValueInRange(selection) : "";
-              const toPos = (lineNumber: number, column: number) => ({ line: Math.max(0, lineNumber - 1), character: Math.max(0, column - 1) });
-              const primary =
-                selection
-                  ? { start: toPos(selection.startLineNumber, selection.startColumn), end: toPos(selection.endLineNumber, selection.endColumn) }
-                  : null;
-              const allSelections = selections.map((s) => ({
-                start: toPos(s.startLineNumber, s.startColumn),
-                end: toPos(s.endLineNumber, s.endColumn)
-              }));
+                const activeSelectionContent = selection ? model.getValueInRange(selection) : "";
+                const toPos = (lineNumber: number, column: number) => ({ line: Math.max(0, lineNumber - 1), character: Math.max(0, column - 1) });
+                const primary =
+                  selection
+                    ? { start: toPos(selection.startLineNumber, selection.startColumn), end: toPos(selection.endLineNumber, selection.endColumn) }
+                    : null;
+                const allSelections = selections.map((s) => ({
+                  start: toPos(s.startLineNumber, s.startColumn),
+                  end: toPos(s.endLineNumber, s.endColumn)
+                }));
 
-              window.dispatchEvent(
-                new CustomEvent("xcoding:fileSelectionChanged", {
-                  detail: {
-                    slot,
-                    path,
-                    selection: primary,
-                    selections: allSelections,
-                    activeSelectionContent
-                  }
-                })
-              );
-            };
+                window.dispatchEvent(
+                  new CustomEvent("xcoding:fileSelectionChanged", {
+                    detail: {
+                      slot,
+                      path,
+                      selection: primary,
+                      selections: allSelections,
+                      activeSelectionContent
+                    }
+                  })
+                );
+              };
 
-            selectionDisposableRef.current = editor.onDidChangeCursorSelection(() => emitSelection());
-            emitSelection();
-
-          }}
-          loading={<div className="p-2 text-[11px] text-[var(--vscode-descriptionForeground)]">{t("loadingEditor")}</div>}
+              selectionDisposableRef.current = editor.onDidChangeCursorSelection(() => emitSelection());
+              emitSelection();
+            }}
+            loading={<div className="p-2 text-[11px] text-[var(--vscode-descriptionForeground)]">{t("loadingEditor")}</div>}
             onChange={(next) => {
               if (next === undefined) return; // ignore dispose events so we don't wipe the buffer
-              valueRef.current = next;
-              setValue(next);
-              if (!dirty) {
-                setDirty(true);
-                onDirtyChange?.(true);
-              }
-              if (language === "markdown") {
-                if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
-                const payload = { slot, path, content: next ?? "" };
-                previewTimerRef.current = window.setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("xcoding:fileContentChanged", { detail: payload }));
-                }, 120);
-              }
+              if (language === "diff") scheduleDiffDecorations();
+              if (language !== "markdown") return;
+              if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current);
+              const payload = { slot, path, content: next ?? "" };
+              previewTimerRef.current = window.setTimeout(() => {
+                window.dispatchEvent(new CustomEvent("xcoding:fileContentChanged", { detail: payload }));
+              }, 120);
             }}
             options={{
               minimap: { enabled: false },

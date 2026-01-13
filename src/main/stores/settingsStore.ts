@@ -10,6 +10,10 @@ export type AppSettings = {
     themePackId: string;
     layout?: { explorerWidth: number; chatWidth: number; isExplorerVisible: boolean; isChatVisible: boolean };
   };
+  files: {
+    autoSave: "off" | "afterDelay";
+    autoSaveDelayMs: number;
+  };
   ai: {
     autoApplyAll: boolean;
     apiBase: string;
@@ -27,6 +31,10 @@ export const settings: AppSettings = {
     theme: "dark",
     themePackId: DEFAULT_THEME_PACK_ID,
     layout: { explorerWidth: 180, chatWidth: 530, isExplorerVisible: true, isChatVisible: true }
+  },
+  files: {
+    autoSave: "off",
+    autoSaveDelayMs: 1000
   },
   ai: {
     autoApplyAll: true,
@@ -79,6 +87,10 @@ export function loadSettingsFromDisk() {
       settings.ui.layout = { explorerWidth, chatWidth, isExplorerVisible, isChatVisible };
     }
     if (typeof parsed.ai?.autoApplyAll === "boolean") settings.ai.autoApplyAll = parsed.ai.autoApplyAll;
+    if (parsed.files?.autoSave === "off" || parsed.files?.autoSave === "afterDelay") settings.files.autoSave = parsed.files.autoSave;
+    if (typeof parsed.files?.autoSaveDelayMs === "number" && Number.isFinite(parsed.files.autoSaveDelayMs)) {
+      settings.files.autoSaveDelayMs = Math.max(200, Math.min(60_000, Math.floor(parsed.files.autoSaveDelayMs)));
+    }
     if (typeof parsed.ai?.apiBase === "string") settings.ai.apiBase = parsed.ai.apiBase;
     if (typeof parsed.ai?.apiKey === "string") settings.ai.apiKey = parsed.ai.apiKey;
     if (typeof parsed.ai?.model === "string") settings.ai.model = parsed.ai.model;

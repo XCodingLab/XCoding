@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ensureMonacoLanguage } from "../monacoSetup";
 import { languageFromPath } from "../languageSupport";
 import { useUiTheme } from "./UiThemeContext";
+import { useI18n } from "./i18n";
 
 loader.config({ monaco });
 
@@ -17,29 +18,44 @@ type Props = {
 };
 
 export default function SearchPreviewPanel({ slot, path, line, query, matchCase = false, regex = false }: Props) {
-  const { theme, monacoThemeName } = useUiTheme();
+  const { monacoThemeName } = useUiTheme();
+  const { t } = useI18n();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const [content, setContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!path) {
       setContent(null);
+      setLoadError(null);
       return;
     }
     setIsLoading(true);
+    setLoadError(null);
     window.xcoding.project
-      .readFile({ slot, path })
+      .readFile({ slot, path, maxBytes: 250_000 })
       .then((res) => {
         if (!res.ok) {
           setContent(null);
+          setLoadError(res.reason ?? "read_failed");
+          return;
+        }
+        if (res.isBinary) {
+          setContent(null);
+          setLoadError(t("binaryFile"));
+          return;
+        }
+        if (res.truncated) {
+          setContent(null);
+          setLoadError(t("fileTooLarge"));
           return;
         }
         setContent(res.content ?? "");
       })
       .finally(() => setIsLoading(false));
-  }, [path, slot]);
+  }, [path, slot, t]);
 
   const applyHighlights = useCallback(
     (editor: monaco.editor.IStandaloneCodeEditor, delay = false) => {
@@ -99,7 +115,8 @@ export default function SearchPreviewPanel({ slot, path, line, query, matchCase 
 
   const modelUri = useMemo(() => {
     if (!path) return undefined;
-    return monaco.Uri.from({ scheme: "xcoding", path: `/${path}` }).toString();
+    // Use a dedicated scheme so previews never fight with the live editor working copy model.
+    return monaco.Uri.from({ scheme: "xcoding-preview", path: `/${path}` }).toString();
   }, [path]);
 
   if (!path) {
@@ -111,7 +128,11 @@ export default function SearchPreviewPanel({ slot, path, line, query, matchCase 
   }
 
   if (content === null) {
-    return <div className="flex h-full items-center justify-center text-sm text-[var(--vscode-descriptionForeground)]">Unable to load file</div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-[var(--vscode-descriptionForeground)]">
+        {loadError ? loadError : "Unable to load file"}
+      </div>
+    );
   }
 
   return (

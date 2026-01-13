@@ -1,4 +1,4 @@
-import { EyeOff, SplitSquareVertical } from "lucide-react";
+import { EyeOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -14,8 +14,7 @@ type Props = {
   projectRootPath?: string;
   onOpenUrl: (url: string) => void;
   onOpenFile?: (relPath: string) => void;
-  onShowEditor?: () => void;
-  onPreviewOnly?: () => void;
+  onClosePreview?: () => void;
 };
 
 function normalizeSlashes(p: string) {
@@ -62,7 +61,7 @@ function resolveImageSrc(src: string | undefined, baseAbs: string): string | und
   return `local-file://${abs}`;
 }
 
-export default function MarkdownPreviewView({ slot, path, projectRootPath, onOpenUrl, onOpenFile, onShowEditor, onPreviewOnly }: Props) {
+export default function MarkdownPreviewView({ slot, path, projectRootPath, onOpenUrl, onOpenFile, onClosePreview }: Props) {
   const { t } = useI18n();
   const [content, setContent] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -229,22 +228,12 @@ export default function MarkdownPreviewView({ slot, path, projectRootPath, onOpe
           {t("previewTitle")} · {path}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {onShowEditor ? (
+          {onClosePreview ? (
             <button
               className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
               type="button"
-              title={t("showEditorSideBySide")}
-              onClick={onShowEditor}
-            >
-              <SplitSquareVertical className="h-4 w-4" />
-            </button>
-          ) : null}
-          {onPreviewOnly ? (
-            <button
-              className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-              type="button"
-              title={t("previewOnly")}
-              onClick={onPreviewOnly}
+              title={t("closePreview")}
+              onClick={onClosePreview}
             >
               <EyeOff className="h-4 w-4" />
             </button>

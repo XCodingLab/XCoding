@@ -4,6 +4,37 @@ import "./monacoSetup";
 import App from "./ui/App";
 import "./styles.css";
 
+class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    // Ensure we surface crashes even when the UI fails to render.
+    console.error("[renderer] fatal render error", error);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    const message = this.state.error?.message ?? "Unknown error";
+    const stack = this.state.error?.stack ?? "";
+    return (
+      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-8">
+        <div className="max-w-2xl w-full rounded-lg border border-neutral-800 bg-neutral-900/30 p-6 space-y-4">
+          <h1 className="text-xl font-semibold">XCoding crashed</h1>
+          <p className="text-sm text-neutral-300">An unexpected error occurred while rendering the UI.</p>
+          <div className="rounded-md bg-neutral-950/40 border border-neutral-800 p-3 text-sm font-mono whitespace-pre-wrap break-words">
+            {message}
+            {stack ? `\n\n${stack}` : ""}
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 function isElectronRuntime(): boolean {
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
   return ua.includes("Electron");
@@ -44,4 +75,4 @@ if (!rootEl) {
 }
 
 const root = ReactDOM.createRoot(rootEl);
-root.render(isXcodingBridgeAvailable() ? <App /> : <MissingBridgeScreen />);
+root.render(isXcodingBridgeAvailable() ? <RootErrorBoundary><App /></RootErrorBoundary> : <MissingBridgeScreen />);

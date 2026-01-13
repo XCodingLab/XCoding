@@ -15,6 +15,10 @@ type Props = {
   onSetThemePackId: (id: string) => void;
   onOpenThemesDir: () => void;
   onImportThemePack: () => void;
+
+  autoSave: "off" | "afterDelay";
+  autoSaveDelayMs: number;
+  onSetAutoSave: (autoSave: "off" | "afterDelay", autoSaveDelayMs: number) => void;
 };
 
 export default function IdeSettingsModal({
@@ -26,7 +30,10 @@ export default function IdeSettingsModal({
   themePacks,
   onSetThemePackId,
   onOpenThemesDir,
-  onImportThemePack
+  onImportThemePack,
+  autoSave,
+  autoSaveDelayMs,
+  onSetAutoSave
 }: Props) {
   const { t } = useI18n();
   const { theme: uiTheme } = useUiTheme();
@@ -147,6 +154,35 @@ export default function IdeSettingsModal({
                 >
                   {t("openThemesFolder")}
                 </button>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-semibold text-[var(--vscode-foreground)]">{t("autoSave")}</div>
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  className="min-w-[220px] rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-3 py-2 text-sm text-[var(--vscode-foreground)] outline-none focus:border-[var(--vscode-focusBorder)]"
+                  onChange={(e) => onSetAutoSave(e.target.value as any, autoSaveDelayMs)}
+                  value={autoSave}
+                >
+                  <option value="off">{t("autoSaveOff")}</option>
+                  <option value="afterDelay">{t("autoSaveAfterDelay")}</option>
+                </select>
+
+                <div className="flex items-center gap-2 text-sm text-[var(--vscode-descriptionForeground)]">
+                  <span>{t("autoSaveDelay")}</span>
+                  <input
+                    className="w-[110px] rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] px-3 py-2 text-sm text-[var(--vscode-foreground)] outline-none focus:border-[var(--vscode-focusBorder)] disabled:opacity-50"
+                    type="number"
+                    min={200}
+                    max={60_000}
+                    step={100}
+                    value={autoSaveDelayMs}
+                    onChange={(e) => onSetAutoSave(autoSave, Number(e.target.value))}
+                    disabled={autoSave !== "afterDelay"}
+                  />
+                  <span className="text-[var(--vscode-descriptionForeground)]">ms</span>
+                </div>
               </div>
             </div>
           </div>

@@ -207,6 +207,7 @@ contextBridge.exposeInMainWorld("xcoding", {
     setTheme: (theme) => ipcRenderer.invoke("settings:setTheme", { theme }),
     setThemePack: (id) => ipcRenderer.invoke("settings:setThemePack", { id }),
     setAutoApply: (enabled) => ipcRenderer.invoke("settings:setAutoApply", { enabled }),
+    setAutoSave: (payload) => ipcRenderer.invoke("settings:setAutoSave", payload),
     setAiConfig: (payload) => ipcRenderer.invoke("settings:setAiConfig", payload),
     setLayout: (payload) => ipcRenderer.invoke("settings:setLayout", payload)
   },

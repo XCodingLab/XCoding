@@ -45,6 +45,18 @@ export function registerSettingsIpc({
   });
 
   ipcMain.handle(
+    "settings:setAutoSave",
+    (_event, { autoSave, autoSaveDelayMs }: { autoSave: AppSettings["files"]["autoSave"]; autoSaveDelayMs?: number }) => {
+      if (autoSave === "off" || autoSave === "afterDelay") settings.files.autoSave = autoSave;
+      if (typeof autoSaveDelayMs === "number" && Number.isFinite(autoSaveDelayMs)) {
+        settings.files.autoSaveDelayMs = Math.max(200, Math.min(60_000, Math.floor(autoSaveDelayMs)));
+      }
+      persistSettingsToDisk();
+      return { ok: true };
+    }
+  );
+
+  ipcMain.handle(
     "settings:setLayout",
     (
       _event,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, FilePlus, FolderPlus, RefreshCw } from "lucide-react";
 import { getExplorerIcon } from "./fileIcons";
 import { useI18n } from "./i18n";
@@ -84,6 +85,7 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
     untracked: new Set()
   });
   const [menu, setMenu] = useState<ContextMenuState>({ isOpen: false });
+  const ignoreClickUntilRef = useRef(0);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState>({ mode: "none" });
   const inlineInputRef = useRef<HTMLInputElement | null>(null);
   const expandedRef = useRef(expanded);
@@ -273,6 +275,8 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
   function openContextMenu(e: React.MouseEvent, dir: string, target?: { rel: string; kind: "dir" | "file" }) {
     e.preventDefault();
     e.stopPropagation();
+    // Some platforms dispatch a follow-up `click` after right click; ignore it so the menu doesn't instantly close.
+    ignoreClickUntilRef.current = Date.now() + 120;
     setMenu({ isOpen: true, x: e.clientX, y: e.clientY, dir, target });
   }
 
@@ -407,8 +411,12 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden"
       onClick={() => {
+        if (Date.now() < ignoreClickUntilRef.current) return;
         closeMenu();
         if (inlineEdit.mode !== "none") setInlineEdit({ mode: "none" });
+      }}
+      onMouseDown={(e) => {
+        if (e.button === 2) ignoreClickUntilRef.current = Date.now() + 120;
       }}
       onContextMenu={(e) => openContextMenu(e, "")}
     >
@@ -633,12 +641,16 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
         ) : null}
       </div>
 
-      {menu.isOpen ? (
-        <div
-          className="fixed z-50 min-w-[180px] rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] p-1 text-[11px] text-[var(--vscode-foreground)] shadow"
-          style={{ left: menu.x, top: menu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
+      {menu.isOpen
+        ? createPortal(
+          <div
+            className="fixed z-50 min-w-[180px] rounded border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] p-1 text-[11px] text-[var(--vscode-foreground)] shadow"
+            style={{
+              left: Math.max(8, Math.min(menu.x, (window.innerWidth || menu.x) - 220)),
+              top: Math.max(8, Math.min(menu.y, (window.innerHeight || menu.y) - 260))
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
           <button
             className="block w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-toolbar-hoverBackground)]"
             onClick={() => {
@@ -712,8 +724,10 @@ export default function ExplorerTree({ slot, projectId, rootPath, onOpenFile, on
               </button>
             </>
           ) : null}
-        </div>
-      ) : null}
+          </div>,
+          document.body
+        )
+        : null}
     </div>
   );
 }

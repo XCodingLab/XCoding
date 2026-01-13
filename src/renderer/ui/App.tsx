@@ -16,6 +16,7 @@ import IdeSettingsModal from "./IdeSettingsModal";
 import type { TerminalPanelState } from "./TerminalPanel";
 import TitleBar from "./TitleBar";
 import { MONACO_CLASSIC_DARK_THEME_NAME } from "../monacoSetup";
+import { workingCopyManager } from "../editor/workingCopy/WorkingCopyManager";
 import { applyResolvedThemePack } from "./theme/applyTheme";
 import type { ResolvedThemePack, ThemePackSummary } from "./theme/types";
 import { DEFAULT_THEME_PACK_ID } from "../../shared/themePacks";
@@ -110,6 +111,8 @@ export default function App() {
 
   const [terminalScrollback, setTerminalScrollback] = useState(1500);
   const [autoApplyAll, setAutoApplyAll] = useState(true);
+  const [autoSave, setAutoSave] = useState<"off" | "afterDelay">("off");
+  const [autoSaveDelayMs, setAutoSaveDelayMs] = useState(1000);
   const [aiConfig, setAiConfig] = useState<{ apiBase: string; apiKey: string; model: string }>({
     apiBase: "https://api.openai.com",
     apiKey: "",
@@ -156,6 +159,19 @@ export default function App() {
     setLanguage(next);
     try {
       await window.xcoding.settings.setLanguage(next);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function setAutoSaveAndPersist(next: "off" | "afterDelay", nextDelayMs: number) {
+    const mode = next === "afterDelay" ? "afterDelay" : "off";
+    const delay = Math.max(200, Math.min(60_000, Math.floor(Number(nextDelayMs) || 1000)));
+    setAutoSave(mode);
+    setAutoSaveDelayMs(delay);
+    workingCopyManager.setAutoSaveConfig({ autoSave: mode, autoSaveDelayMs: delay });
+    try {
+      await window.xcoding.settings.setAutoSave({ autoSave: mode, autoSaveDelayMs: delay });
     } catch {
       // ignore
     }
@@ -332,18 +348,33 @@ export default function App() {
       if (e.defaultPrevented) return;
       if ((e as any).isComposing) return;
       const key = e.key.toLowerCase();
+      const code = e.code;
       const isMod = e.metaKey || e.ctrlKey;
 
-      if (isMod && !e.altKey && !e.shiftKey && key === ",") {
+      if (!isMod && !e.altKey && !e.shiftKey && (code === "F12" || key === "f12")) {
+        const ui = slotUiRef.current[activeProjectSlot] ?? makeEmptySlotUiState();
+        const pane = ui.activePane;
+        const activeTabId = ui.panes[pane]?.activeTabId;
+        const tab = ui.panes[pane]?.tabs.find((t) => t.id === activeTabId);
+        if (tab && tab.type === "file" && "path" in tab && typeof tab.path === "string") {
+          e.preventDefault();
+          window.dispatchEvent(
+            new CustomEvent("xcoding:requestEditorCommand", { detail: { slot: activeProjectSlot, path: tab.path, command: "gotoDefinition" } })
+          );
+        }
+        return;
+      }
+
+      if (isMod && !e.altKey && !e.shiftKey && (code === "Comma" || key === ",")) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("xcoding:dismissOverlays"));
         setIsIdeSettingsOpen((v) => !v);
         return;
       }
 
-      const target = e.target as HTMLElement | null;
+      const target = (e.target as HTMLElement | null) ?? (document.activeElement as HTMLElement | null);
       const tag = target?.tagName?.toLowerCase() ?? "";
-      const isTextInput = tag === "input" || tag === "textarea" || (target as any)?.isContentEditable;
+      const isTextInput = tag === "input" || tag === "textarea" || tag === "select" || (target as any)?.isContentEditable;
       if (isTextInput) {
         const allowInEditor = Boolean(target?.closest?.(".monaco-editor, .xterm"));
         if (!allowInEditor) return;
@@ -351,11 +382,12 @@ export default function App() {
 
       if (!isMod || e.altKey) return;
 
-      if (!e.shiftKey && key === "s") {
+      if (!e.shiftKey && (code === "KeyS" || key === "s")) {
         e.preventDefault();
-        const pane = activeUi.activePane;
-        const activeTabId = activeUi.panes[pane]?.activeTabId;
-        const tab = activeUi.panes[pane]?.tabs.find((t) => t.id === activeTabId);
+        const ui = slotUiRef.current[activeProjectSlot] ?? makeEmptySlotUiState();
+        const pane = ui.activePane;
+        const activeTabId = ui.panes[pane]?.activeTabId;
+        const tab = ui.panes[pane]?.tabs.find((t) => t.id === activeTabId);
         if (tab && tab.type === "file" && "path" in tab && typeof tab.path === "string") {
           window.dispatchEvent(
             new CustomEvent("xcoding:requestSaveFile", { detail: { slot: activeProjectSlot, path: tab.path } })
@@ -364,23 +396,51 @@ export default function App() {
         return;
       }
 
-      if (!e.shiftKey && key === "p") {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("xcoding:openSearch", { detail: { slot: activeProjectSlot, mode: "files" } }));
+      if (!e.shiftKey && (code === "KeyF" || key === "f")) {
+        const ui = slotUiRef.current[activeProjectSlot] ?? makeEmptySlotUiState();
+        const pane = ui.activePane;
+        const activeTabId = ui.panes[pane]?.activeTabId;
+        const tab = ui.panes[pane]?.tabs.find((t) => t.id === activeTabId);
+        if (tab && tab.type === "file" && "path" in tab && typeof tab.path === "string") {
+          e.preventDefault();
+          window.dispatchEvent(
+            new CustomEvent("xcoding:requestEditorCommand", { detail: { slot: activeProjectSlot, path: tab.path, command: "find" } })
+          );
+        }
         return;
       }
-      if (e.shiftKey && key === "f") {
+
+      if (!e.shiftKey && (code === "KeyH" || key === "h")) {
+        const ui = slotUiRef.current[activeProjectSlot] ?? makeEmptySlotUiState();
+        const pane = ui.activePane;
+        const activeTabId = ui.panes[pane]?.activeTabId;
+        const tab = ui.panes[pane]?.tabs.find((t) => t.id === activeTabId);
+        if (tab && tab.type === "file" && "path" in tab && typeof tab.path === "string") {
+          e.preventDefault();
+          window.dispatchEvent(
+            new CustomEvent("xcoding:requestEditorCommand", { detail: { slot: activeProjectSlot, path: tab.path, command: "replace" } })
+          );
+        }
+        return;
+      }
+
+      if (!e.shiftKey && (code === "KeyP" || key === "p")) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("xcoding:openSearch", { detail: { slot: activeProjectSlot, mode: "content" } }));
         return;
       }
-      if (!e.shiftKey && key === "`") {
+      if (e.shiftKey && (code === "KeyF" || key === "f")) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("xcoding:openSearch", { detail: { slot: activeProjectSlot, mode: "content" } }));
+        return;
+      }
+      if (!e.shiftKey && (code === "Backquote" || key === "`")) {
         e.preventDefault();
         toggleOrCreateTerminalPanel();
       }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
   }, [activeProjectSlot]);
 
   const t = useMemo(() => {
@@ -1380,6 +1440,11 @@ export default function App() {
       setLanguage(s.ui.language);
       setAutoApplyAll(s.ai.autoApplyAll);
       setAiConfig({ apiBase: s.ai.apiBase, apiKey: s.ai.apiKey, model: s.ai.model });
+      const nextAutoSave = s.files?.autoSave === "afterDelay" ? "afterDelay" : "off";
+      const nextAutoSaveDelay = typeof s.files?.autoSaveDelayMs === "number" ? s.files.autoSaveDelayMs : 1000;
+      setAutoSave(nextAutoSave);
+      setAutoSaveDelayMs(nextAutoSaveDelay);
+      workingCopyManager.setAutoSaveConfig({ autoSave: nextAutoSave, autoSaveDelayMs: nextAutoSaveDelay });
       if (s.ui.layout) {
         defaultUiLayoutRef.current = s.ui.layout;
         setLayout(s.ui.layout);
@@ -1751,6 +1816,9 @@ export default function App() {
             onSetThemePackId={(next) => void setThemePackAndPersist(next)}
             onOpenThemesDir={() => void openThemesDir()}
             onImportThemePack={() => void importThemePackZip()}
+            autoSave={autoSave}
+            autoSaveDelayMs={autoSaveDelayMs}
+            onSetAutoSave={(mode, delayMs) => void setAutoSaveAndPersist(mode, delayMs)}
           />
 
           <AlertModal

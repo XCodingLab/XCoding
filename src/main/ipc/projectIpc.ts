@@ -1,5 +1,5 @@
 import { clipboard, ipcMain, shell } from "electron";
-import type { ProjectServiceRequestNoId } from "../shared/projectServiceProtocol";
+import type { LspLanguage, ProjectServiceRequestNoId } from "../shared/projectServiceProtocol";
 import { sendToProjectService } from "../managers/projectServiceManager";
 import { getProjectForSlot } from "../stores/projectsStore";
 
@@ -18,10 +18,17 @@ async function forwardToProjectService(slot: number, payload: ProjectServiceRequ
 }
 
 export function registerProjectIpc() {
-  ipcMain.handle("project:fsReadFile", async (_event, { slot, path: relPath }: { slot: number; path: string }) => {
-    const res = await forwardToProjectService(slot, { type: "fs:readFile", relPath });
+  ipcMain.handle("project:fsReadFile", async (_event, { slot, path: relPath, maxBytes }: { slot: number; path: string; maxBytes?: number }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:readFile", relPath, maxBytes });
     if (!res.ok) return res;
-    return { ok: true, content: String((res.result as any)?.content ?? "") };
+    return {
+      ok: true,
+      content: String((res.result as any)?.content ?? ""),
+      truncated: Boolean((res.result as any)?.truncated),
+      isBinary: Boolean((res.result as any)?.isBinary),
+      size: Number((res.result as any)?.size ?? 0),
+      mtimeMs: Number((res.result as any)?.mtimeMs ?? 0)
+    };
   });
 
   ipcMain.handle("project:fsWriteFile", async (_event, { slot, path: relPath, content }: { slot: number; path: string; content: string }) => {
@@ -226,7 +233,7 @@ export function registerProjectIpc() {
         path: relPath,
         languageId,
         content
-      }: { slot: number; language: "python" | "go"; path: string; languageId: string; content: string }
+      }: { slot: number; language: LspLanguage; path: string; languageId: string; content: string }
     ) => {
       const res = await forwardToProjectService(slot, { type: "lsp:didOpen", language, relPath, languageId, content });
       if (!res.ok) return res;
@@ -234,13 +241,13 @@ export function registerProjectIpc() {
     }
   );
 
-  ipcMain.handle("project:lspDidChange", async (_event, { slot, language, path: relPath, content }: { slot: number; language: "python" | "go"; path: string; content: string }) => {
+  ipcMain.handle("project:lspDidChange", async (_event, { slot, language, path: relPath, content }: { slot: number; language: LspLanguage; path: string; content: string }) => {
     const res = await forwardToProjectService(slot, { type: "lsp:didChange", language, relPath, content });
     if (!res.ok) return res;
     return { ok: true };
   });
 
-  ipcMain.handle("project:lspDidClose", async (_event, { slot, language, path: relPath }: { slot: number; language: "python" | "go"; path: string }) => {
+  ipcMain.handle("project:lspDidClose", async (_event, { slot, language, path: relPath }: { slot: number; language: LspLanguage; path: string }) => {
     const res = await forwardToProjectService(slot, { type: "lsp:didClose", language, relPath });
     if (!res.ok) return res;
     return { ok: true };
@@ -250,7 +257,7 @@ export function registerProjectIpc() {
     "project:lspRequest",
     async (
       _event,
-      { slot, language, method, path: relPath, params }: { slot: number; language: "python" | "go"; method: string; path: string; params?: unknown }
+      { slot, language, method, path: relPath, params }: { slot: number; language: LspLanguage; method: string; path: string; params?: unknown }
     ) => {
       const res = await forwardToProjectService(slot, { type: "lsp:request", language, method, relPath, params });
       if (!res.ok) return res;
@@ -258,10 +265,17 @@ export function registerProjectIpc() {
     }
   );
 
-  ipcMain.handle("fs:readFile", async (_event, { slot, path: relPath }: { slot: number; path: string }) => {
-    const res = await forwardToProjectService(slot, { type: "fs:readFile", relPath });
+  ipcMain.handle("fs:readFile", async (_event, { slot, path: relPath, maxBytes }: { slot: number; path: string; maxBytes?: number }) => {
+    const res = await forwardToProjectService(slot, { type: "fs:readFile", relPath, maxBytes });
     if (!res.ok) return res;
-    return { ok: true, content: String((res.result as any)?.content ?? "") };
+    return {
+      ok: true,
+      content: String((res.result as any)?.content ?? ""),
+      truncated: Boolean((res.result as any)?.truncated),
+      isBinary: Boolean((res.result as any)?.isBinary),
+      size: Number((res.result as any)?.size ?? 0),
+      mtimeMs: Number((res.result as any)?.mtimeMs ?? 0)
+    };
   });
 
   ipcMain.handle("os:copyText", (_event, { text }: { text: string }) => {

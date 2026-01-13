@@ -28,7 +28,7 @@ export const MUST_LANGUAGES: ReadonlySet<Exclude<MonacoLanguageId, "plaintext">>
   "java"
 ]);
 
-export const MUST_LSP_LANGUAGES: ReadonlySet<Exclude<MonacoLanguageId, "plaintext">> = new Set(["python"]);
+export const MUST_LSP_LANGUAGES: ReadonlySet<Exclude<MonacoLanguageId, "plaintext">> = new Set(["python", "go", "typescript", "javascript"]);
 
 function extLower(path: string) {
   const cleaned = String(path ?? "").trim();

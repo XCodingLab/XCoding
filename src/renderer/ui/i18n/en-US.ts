@@ -24,6 +24,8 @@ export const enUS = {
   delete: "Delete",
   copyPath: "Copy Path",
   copyRelativePath: "Copy Relative Path",
+  closeOtherTabs: "Close Others",
+  closeAllTabs: "Close All",
   close: "Close",
   settings: "Settings",
   ideSettings: "IDE Settings",
@@ -90,6 +92,7 @@ export const enUS = {
   openProjectSubtitle: "Choose a recent project, or open a local folder.",
   open: "Open",
   openPreview: "Open Preview",
+  closePreview: "Close Preview",
   windowClose: "Close",
   windowMinimize: "Minimize",
   windowMaximize: "Maximize",
@@ -140,7 +143,6 @@ export const enUS = {
   loadingPreview: "Loading preview…",
   previewError: "Preview error:",
   previewTitle: "Preview",
-  showEditorSideBySide: "Show editor side-by-side",
   previewOnly: "Preview only",
   terminalLabel: "Terminal",
   previewConsole: "Preview Console",
@@ -255,5 +257,20 @@ export const enUS = {
   responseHeaders: "Response headers",
   responseBody: "Response body",
   noResponseBody: "(no body)",
-  noHeaders: "(no headers)"
+  noHeaders: "(no headers)",
+
+  deleted: "Deleted",
+  diskChanged: "Disk changed",
+  binaryFile: "Binary",
+  fileTooLarge: "Too large",
+  reloadDiscardConfirm: "Discard unsaved changes and reload from disk?",
+  unsupportedFileTitle: "Unable to open this file",
+  unsupportedBinaryHint: "Binary files are not supported in the editor yet.",
+  unsupportedLargeHint: "This file is too large to open in the editor.",
+  fileSize: "File size",
+
+  autoSave: "Auto Save",
+  autoSaveOff: "Off",
+  autoSaveAfterDelay: "After Delay",
+  autoSaveDelay: "Delay"
 } as const;

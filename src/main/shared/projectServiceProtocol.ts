@@ -1,8 +1,8 @@
-export type LspLanguage = "python" | "go";
+export type LspLanguage = "python" | "go" | "typescript";
 
 export type ProjectServiceRequest =
   | { id: string; type: "init"; projectPath: string }
-  | { id: string; type: "fs:readFile"; relPath: string }
+  | { id: string; type: "fs:readFile"; relPath: string; maxBytes?: number }
   | { id: string; type: "fs:writeFile"; relPath: string; content: string }
   | { id: string; type: "fs:listDir"; relDir: string }
   | { id: string; type: "fs:searchPaths"; query: string; limit?: number }

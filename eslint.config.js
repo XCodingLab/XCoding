@@ -8,6 +8,7 @@ export default [
       "assets/**",
       "build/**",
       "dist/**",
+      "release/**",
       "reference/**",
       "third_party/**",
       "node_modules/**",

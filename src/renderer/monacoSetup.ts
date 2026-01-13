@@ -309,7 +309,9 @@ function toMonacoRange(range?: { start?: { line?: number; character?: number }; 
   return new monaco.Range(startLine, startCol, endLine, endCol);
 }
 
-async function lspRequest(language: "python", relPath: string, method: string, params: any) {
+type LspServerLanguage = "python" | "go" | "typescript";
+
+async function lspRequest(language: LspServerLanguage, relPath: string, method: string, params: any) {
   try {
     const slot = getActiveSlot();
     const res = await (window as any).xcoding?.project?.lspRequest?.({ slot, language, method, path: relPath, params });
@@ -387,15 +389,15 @@ function lspMarkupToString(contents: any): string {
   return "";
 }
 
-function registerLspLanguageProviders(language: "python") {
-  monaco.languages.registerCompletionItemProvider(language, {
+function registerLspLanguageProviders(monacoLanguageId: string, lspLanguage: LspServerLanguage) {
+  monaco.languages.registerCompletionItemProvider(monacoLanguageId, {
     triggerCharacters: [".", ":", "_"],
     async provideCompletionItems(model, position) {
       const relPath = uriToRelPath(model.uri);
       if (!relPath) return { suggestions: [] };
       const word = model.getWordUntilPosition(position);
       const defaultRange = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
-      const result = await lspRequest(language, relPath, "textDocument/completion", { position: toLspPosition(position) });
+      const result = await lspRequest(lspLanguage, relPath, "textDocument/completion", { position: toLspPosition(position) });
       const items = Array.isArray(result?.items) ? result.items : Array.isArray(result) ? result : [];
       const suggestions: monaco.languages.CompletionItem[] = items.map((it: any) => {
         const label = typeof it.label === "string" ? it.label : String(it.label ?? "");
@@ -419,11 +421,11 @@ function registerLspLanguageProviders(language: "python") {
     }
   });
 
-  monaco.languages.registerHoverProvider(language, {
+  monaco.languages.registerHoverProvider(monacoLanguageId, {
     async provideHover(model, position) {
       const relPath = uriToRelPath(model.uri);
       if (!relPath) return null;
-      const res = await lspRequest(language, relPath, "textDocument/hover", { position: toLspPosition(position) });
+      const res = await lspRequest(lspLanguage, relPath, "textDocument/hover", { position: toLspPosition(position) });
       if (!res) return null;
       const contents = lspMarkupToString(res.contents);
       if (!contents) return null;
@@ -431,33 +433,80 @@ function registerLspLanguageProviders(language: "python") {
     }
   });
 
-  monaco.languages.registerDefinitionProvider(language, {
+  monaco.languages.registerDefinitionProvider(monacoLanguageId, {
     async provideDefinition(model, position) {
       const relPath = uriToRelPath(model.uri);
       if (!relPath) return null;
-      const res = await lspRequest(language, relPath, "textDocument/definition", { position: toLspPosition(position) });
+      const res = await lspRequest(lspLanguage, relPath, "textDocument/definition", { position: toLspPosition(position) });
       const defs = Array.isArray(res) ? res : res ? [res] : [];
       const links: monaco.languages.LocationLink[] = [];
+
+      const fallbackOriginRange = (() => {
+        const line = model.getLineContent(position.lineNumber);
+        const idx = Math.max(0, Math.min(line.length - 1, position.column - 1));
+        const quoteChars = ["'", '"', "`"];
+        const isEscaped = (s: string, i: number) => {
+          let backslashes = 0;
+          for (let j = i - 1; j >= 0 && s[j] === "\\"; j--) backslashes += 1;
+          return backslashes % 2 === 1;
+        };
+
+        let leftQuote = -1;
+        let quote = "";
+        for (let i = idx; i >= 0; i -= 1) {
+          const ch = line[i];
+          if (!quoteChars.includes(ch)) continue;
+          if (isEscaped(line, i)) continue;
+          leftQuote = i;
+          quote = ch;
+          break;
+        }
+        if (leftQuote < 0) return undefined;
+
+        let rightQuote = -1;
+        for (let i = leftQuote + 1; i < line.length; i += 1) {
+          if (line[i] !== quote) continue;
+          if (isEscaped(line, i)) continue;
+          rightQuote = i;
+          break;
+        }
+        if (rightQuote < 0) return undefined;
+
+        if (idx <= leftQuote || idx >= rightQuote) return undefined;
+        return new monaco.Range(position.lineNumber, leftQuote + 2, position.lineNumber, rightQuote + 1);
+      })();
 
       for (const d of defs) {
         const targetUri = fileUriToRelPath(String(d?.targetUri ?? d?.uri ?? ""));
         const range = toMonacoRange(d?.targetSelectionRange ?? d?.range ?? d?.targetRange);
+        const originSelectionRange = toMonacoRange(d?.originSelectionRange) ?? fallbackOriginRange;
         if (!targetUri) continue;
+        const targetModelUri = monaco.Uri.from({ scheme: MONACO_URI_SCHEME, path: `/${targetUri}` });
+        // Monaco's standalone definition flow may try to create a model reference for the target URI.
+        // If the model doesn't exist, it throws "Model not found" before `registerEditorOpener` runs.
+        // Create an empty model up-front; our `WorkingCopy` will populate it when the file is opened.
+        if (!monaco.editor.getModel(targetModelUri)) {
+          try {
+            monaco.editor.createModel("", undefined, targetModelUri);
+          } catch {
+            // ignore (race with other creators)
+          }
+        }
         links.push({
-          originSelectionRange: undefined,
+          originSelectionRange,
           range: range ?? new monaco.Range(1, 1, 1, 1),
-          uri: monaco.Uri.from({ scheme: MONACO_URI_SCHEME, path: `/${targetUri}` })
+          uri: targetModelUri
         });
       }
       return links;
     }
   });
 
-  monaco.languages.registerDocumentSymbolProvider(language, {
+  monaco.languages.registerDocumentSymbolProvider(monacoLanguageId, {
     async provideDocumentSymbols(model) {
       const relPath = uriToRelPath(model.uri);
       if (!relPath) return [];
-      const res = await lspRequest(language, relPath, "textDocument/documentSymbol", {});
+      const res = await lspRequest(lspLanguage, relPath, "textDocument/documentSymbol", {});
       const symbols = Array.isArray(res) ? res : [];
 
       return symbols
@@ -475,4 +524,7 @@ function registerLspLanguageProviders(language: "python") {
   });
 }
 
-registerLspLanguageProviders("python");
+registerLspLanguageProviders("python", "python");
+registerLspLanguageProviders("go", "go");
+registerLspLanguageProviders("typescript", "typescript");
+registerLspLanguageProviders("javascript", "typescript");

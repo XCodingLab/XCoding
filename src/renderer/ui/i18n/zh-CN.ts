@@ -24,6 +24,8 @@ export const zhCN = {
   delete: "删除",
   copyPath: "复制路径",
   copyRelativePath: "复制相对路径",
+  closeOtherTabs: "关闭其他",
+  closeAllTabs: "关闭全部",
   close: "关闭",
   settings: "设置",
   ideSettings: "IDE 设置",
@@ -89,6 +91,7 @@ export const zhCN = {
   openProjectSubtitle: "选择历史项目，或打开一个本地文件夹。",
   open: "打开",
   openPreview: "打开预览",
+  closePreview: "关闭预览",
   windowClose: "关闭",
   windowMinimize: "最小化",
   windowMaximize: "最大化",
@@ -136,7 +139,6 @@ export const zhCN = {
   loadingPreview: "正在加载预览…",
   previewError: "预览错误：",
   previewTitle: "预览",
-  showEditorSideBySide: "并排显示编辑器",
   previewOnly: "仅预览",
   terminalLabel: "终端",
   previewConsole: "预览控制台",
@@ -250,5 +252,20 @@ export const zhCN = {
   responseHeaders: "响应头",
   responseBody: "返回值",
   noResponseBody: "（无返回值）",
-  noHeaders: "（无头信息）"
+  noHeaders: "（无头信息）",
+
+  deleted: "已删除",
+  diskChanged: "磁盘已变更",
+  binaryFile: "二进制",
+  fileTooLarge: "文件过大",
+  reloadDiscardConfirm: "将丢弃未保存的修改并从磁盘重新加载，是否继续？",
+  unsupportedFileTitle: "无法在编辑器中打开该文件",
+  unsupportedBinaryHint: "该文件为二进制文件，当前编辑器暂不支持预览。",
+  unsupportedLargeHint: "该文件过大，当前编辑器暂不支持打开。",
+  fileSize: "文件大小",
+
+  autoSave: "自动保存",
+  autoSaveOff: "关闭",
+  autoSaveAfterDelay: "延迟后保存",
+  autoSaveDelay: "延迟"
 } as const;

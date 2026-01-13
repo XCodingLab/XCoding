@@ -84,7 +84,7 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [search, setSearch] = useState<SearchState>(() => ({
-    mode: "files",
+    mode: "content",
     query: "",
     fileResults: [],
     contentResults: null,
@@ -99,7 +99,7 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
   useEffect(() => {
     setActiveView("explorer");
     setSearch({
-      mode: "files",
+      mode: "content",
       query: "",
       fileResults: [],
       contentResults: null,
@@ -114,7 +114,7 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
       const detail = (e as CustomEvent).detail as { slot?: number; mode?: SearchMode } | undefined;
       if (!detail || detail.slot !== slot) return;
       setActiveView("search");
-      setSearch((prev) => ({ ...prev, mode: detail.mode === "content" ? "content" : "files" }));
+      setSearch((prev) => ({ ...prev, mode: detail.mode === "files" ? "files" : "content" }));
       window.setTimeout(() => searchInputRef.current?.focus(), 0);
     };
     window.addEventListener("xcoding:openSearch", handler as any);
@@ -307,21 +307,9 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
             ) : null}
           </div>
 
-          {activeView === "search" ? (
+            {activeView === "search" ? (
             <div className="mt-3 flex flex-col gap-3">
               <div className="flex items-center gap-1">
-                <button
-                  className={[
-                    "rounded px-2 py-1 text-[11px]",
-                    search.mode === "files"
-                      ? "bg-[var(--vscode-sideBarSectionHeader-background)] text-[var(--vscode-foreground)]"
-                      : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                  ].join(" ")}
-                  onClick={() => setSearch((s) => ({ ...s, mode: "files", selectedIndex: 0 }))}
-                  type="button"
-                >
-                  {t("files")}
-                </button>
                 <button
                   className={[
                     "rounded px-2 py-1 text-[11px]",
@@ -333,6 +321,18 @@ export default function ExplorerPanel({ slot, projectId, rootPath, isBound, widt
                   type="button"
                 >
                   {t("search")}
+                </button>
+                <button
+                  className={[
+                    "rounded px-2 py-1 text-[11px]",
+                    search.mode === "files"
+                      ? "bg-[var(--vscode-sideBarSectionHeader-background)] text-[var(--vscode-foreground)]"
+                      : "text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                  ].join(" ")}
+                  onClick={() => setSearch((s) => ({ ...s, mode: "files", selectedIndex: 0 }))}
+                  type="button"
+                >
+                  {t("files")}
                 </button>
               </div>
             </div>

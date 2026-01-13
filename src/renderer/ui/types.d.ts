@@ -345,7 +345,15 @@ declare global {
         onRequest: (listener: (payload: any) => void) => () => void;
       };
       project: {
-        readFile: (payload: { slot: number; path: string }) => Promise<{ ok: boolean; content?: string; reason?: string }>;
+        readFile: (payload: { slot: number; path: string; maxBytes?: number }) => Promise<{
+          ok: boolean;
+          content?: string;
+          truncated?: boolean;
+          isBinary?: boolean;
+          size?: number;
+          mtimeMs?: number;
+          reason?: string;
+        }>;
         writeFile: (payload: { slot: number; path: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;
         listDir: (payload: { slot: number; dir: string }) => Promise<{
           ok: boolean;
@@ -452,13 +460,21 @@ declare global {
           diagnostics?: Array<{ code: number; message: string; line: number; column: number; category: string }>;
           reason?: string;
         }>;
-        lspDidOpen: (payload: { slot: number; language: "python" | "go"; path: string; languageId: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;
-        lspDidChange: (payload: { slot: number; language: "python" | "go"; path: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;
-        lspDidClose: (payload: { slot: number; language: "python" | "go"; path: string }) => Promise<{ ok: boolean; reason?: string }>;
-        lspRequest: (payload: { slot: number; language: "python" | "go"; method: string; path: string; params?: unknown }) => Promise<{ ok: boolean; result?: any; reason?: string }>;
+        lspDidOpen: (payload: { slot: number; language: "python" | "go" | "typescript"; path: string; languageId: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;
+        lspDidChange: (payload: { slot: number; language: "python" | "go" | "typescript"; path: string; content: string }) => Promise<{ ok: boolean; reason?: string }>;
+        lspDidClose: (payload: { slot: number; language: "python" | "go" | "typescript"; path: string }) => Promise<{ ok: boolean; reason?: string }>;
+        lspRequest: (payload: { slot: number; language: "python" | "go" | "typescript"; method: string; path: string; params?: unknown }) => Promise<{ ok: boolean; result?: any; reason?: string }>;
       };
       fs: {
-        readFile: (payload: { slot: number; path: string }) => Promise<{ ok: boolean; content?: string; reason?: string }>;
+        readFile: (payload: { slot: number; path: string; maxBytes?: number }) => Promise<{
+          ok: boolean;
+          content?: string;
+          truncated?: boolean;
+          isBinary?: boolean;
+          size?: number;
+          mtimeMs?: number;
+          reason?: string;
+        }>;
       };
       settings: {
         get: () => Promise<{
@@ -468,12 +484,14 @@ declare global {
             themePackId: string;
             layout?: { explorerWidth: number; chatWidth: number; isExplorerVisible: boolean; isChatVisible: boolean };
           };
+          files: { autoSave: "off" | "afterDelay"; autoSaveDelayMs: number };
           ai: { autoApplyAll: boolean; apiBase: string; apiKey: string; model: string };
         }>;
         setLanguage: (language: "en-US" | "zh-CN") => Promise<{ ok: boolean }>;
         setTheme: (theme: "dark" | "light") => Promise<{ ok: boolean }>;
         setThemePack: (id: string) => Promise<{ ok: boolean }>;
         setAutoApply: (enabled: boolean) => Promise<{ ok: boolean }>;
+        setAutoSave: (payload: { autoSave: "off" | "afterDelay"; autoSaveDelayMs?: number }) => Promise<{ ok: boolean }>;
         setAiConfig: (payload: { apiBase: string; apiKey: string; model: string }) => Promise<{ ok: boolean }>;
         setLayout: (payload: { explorerWidth: number; chatWidth: number; isExplorerVisible: boolean; isChatVisible: boolean }) => Promise<{ ok: boolean }>;
       };
