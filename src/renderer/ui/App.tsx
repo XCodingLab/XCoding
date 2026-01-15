@@ -265,6 +265,7 @@ export default function App() {
   const [isProjectPickerOpen, setIsProjectPickerOpen] = useState(false);
   const [dragPreviewSlotOrder, setDragPreviewSlotOrder] = useState<number[] | null>(null);
   const [isDraggingTab, setIsDraggingTab] = useState(false);
+  const [draggingSlotForUi, setDraggingSlotForUi] = useState<number | null>(null);
 
   const slotUiRef = useRef(slotUi);
   const prevSlotProjectIdRef = useRef<Record<number, string | undefined>>({});
@@ -328,14 +329,20 @@ export default function App() {
         const currentOrder =
           projectsState.slotOrder?.length === 8 ? projectsState.slotOrder : Array.from({ length: 8 }).map((_, i) => i + 1);
         if (currentOrder.join(",") !== preview.join(",")) {
+          setDragPreviewSlotOrder(preview);
           setProjectsState((s) => ({ ...s, slotOrder: preview }));
-          void window.xcoding.projects.reorderSlots(preview);
+          void window.xcoding.projects.reorderSlots(preview).finally(() => {
+            setDragPreviewSlotOrder(null);
+            dragPreviewSlotOrderRef.current = null;
+          });
         }
+      } else {
+        setDragPreviewSlotOrder(null);
+        dragPreviewSlotOrderRef.current = null;
       }
 
       draggingSlotRef.current = null;
-      setDragPreviewSlotOrder(null);
-      dragPreviewSlotOrderRef.current = null;
+      setDraggingSlotForUi(null);
       projectReorderStartOrderRef.current = null;
       projectReorderDidChangeRef.current = false;
     };
@@ -1184,7 +1191,7 @@ export default function App() {
   }, [activeProjectSlot]);
 
   useEffect(() => {
-    const handler = (e: Event) => {
+      const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as
         | {
             title?: string;
@@ -1193,11 +1200,13 @@ export default function App() {
             reviewFiles?: Array<{ path: string; added: number; removed: number; kind?: string; diff: string }>;
             threadId?: string;
             turnId?: string;
+            activePath?: string;
           }
         | undefined;
       const reviewFiles = Array.isArray(detail?.reviewFiles) ? detail!.reviewFiles! : null;
       const threadId = typeof detail?.threadId === "string" ? detail.threadId.trim() : "";
       const turnId = typeof detail?.turnId === "string" ? detail.turnId.trim() : "";
+      const activePath = typeof detail?.activePath === "string" && detail.activePath.trim() ? detail.activePath.trim() : undefined;
       const useReviewTab = Boolean(reviewFiles?.length && threadId && turnId);
       const diff = typeof detail?.diff === "string" ? detail.diff : "";
       if (!reviewFiles?.length && !diff) return;
@@ -1214,7 +1223,7 @@ export default function App() {
             if (existingIndex >= 0) {
               const nextPanes: typeof s.panes = { ...s.panes };
               const nextTab: AnyTab = useReviewTab
-                ? { id: stableId, type: "codexReviewDiff", title, threadId, turnId, files: reviewFiles! }
+                ? { id: stableId, type: "codexReviewDiff", title, threadId, turnId, files: reviewFiles!, activePath }
                 : { id: stableId, type: "unifiedDiff", title, diff, source: "codex" };
               // Update tab content in-place (copy-on-write for tabs array).
               nextPanes[p] = {
@@ -1226,14 +1235,14 @@ export default function App() {
             }
           }
           const next: AnyTab = useReviewTab
-            ? { id: stableId, type: "codexReviewDiff", title, threadId, turnId, files: reviewFiles! }
+            ? { id: stableId, type: "codexReviewDiff", title, threadId, turnId, files: reviewFiles!, activePath }
             : { id: stableId, type: "unifiedDiff", title, diff, source: "codex" };
           return { ...s, panes: { ...s.panes, [pane]: { tabs: [...s.panes[pane].tabs, next], activeTabId: stableId } } };
         }
 
         const id = `tab-codex-diff-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const next: AnyTab = useReviewTab
-          ? { id, type: "codexReviewDiff", title, threadId, turnId, files: reviewFiles! }
+          ? { id, type: "codexReviewDiff", title, threadId, turnId, files: reviewFiles!, activePath }
           : { id, type: "unifiedDiff", title, diff, source: "codex" };
         return { ...s, panes: { ...s.panes, [pane]: { tabs: [...s.panes[pane].tabs, next], activeTabId: id } } };
       });
@@ -1627,8 +1636,9 @@ export default function App() {
 
   function onDragStartProject(e: DragEvent, slot: number) {
     draggingSlotRef.current = slot;
+    setDraggingSlotForUi(slot);
     lastProjectReorderAtRef.current = 0;
-    e.dataTransfer.setData("application/x-xcoding-project-slot", JSON.stringify({ slot }));
+    e.dataTransfer.setData("application/x-xcoding-project-slot", JSON.stringify({ slot, mode: isSingleProjectWindow ? "single" : "multi" }));
     e.dataTransfer.effectAllowed = "move";
     const next = projectsState.slotOrder?.length === 8 ? [...projectsState.slotOrder] : Array.from({ length: 8 }).map((_, i) => i + 1);
     projectReorderStartOrderRef.current = next;
@@ -1639,28 +1649,7 @@ export default function App() {
 
   function onDragEndProject(e: DragEvent, slot: number) {
     draggingSlotRef.current = null;
-    dragPreviewSlotOrderRef.current = null;
-    setDragPreviewSlotOrder(null);
-
-    // When dropped outside a valid drop target, treat it as "detach to new window".
-    // This approximates the native VS Code behavior of dragging a workspace entry out.
-    if (e.dataTransfer && e.dataTransfer.dropEffect === "none") {
-      void window.xcoding.window.create({ slot, mode: "single" });
-      setDetachedSlots((prev) => {
-        const next = new Set(prev);
-        next.add(slot);
-        return next;
-      });
-      if (activeProjectSlot === slot) {
-        const nextDetached = new Set(detachedSlots);
-        nextDetached.add(slot);
-        const fallback = baseProjectSlots.find((p) => p.slot !== slot && !nextDetached.has(p.slot))?.slot;
-        if (fallback) {
-          setActiveProjectSlot(fallback);
-          void window.xcoding.projects.setActiveSlot(fallback);
-        }
-      }
-    }
+    setDraggingSlotForUi(null);
   }
 
   function onDragOverProject(e: DragEvent) {
@@ -1671,7 +1660,7 @@ export default function App() {
     const fromSlot = draggingSlotRef.current;
     const toSlot = Number((e.currentTarget as HTMLElement).getAttribute("data-slot") ?? "");
     if (!fromSlot || !toSlot || fromSlot === toSlot) return;
-    const order = dragPreviewSlotOrder ?? projectsState.slotOrder;
+    const order = dragPreviewSlotOrderRef.current ?? projectsState.slotOrder;
     if (!order || order.length !== 8) return;
     const fromIdx = order.indexOf(fromSlot);
     const toIdx = order.indexOf(toSlot);
@@ -1695,7 +1684,7 @@ export default function App() {
     setDragPreviewSlotOrder(next);
   }
 
-  function onDropProject(e: DragEvent, slot: number) {
+  async function onDropProject(e: DragEvent, slot: number) {
     const raw = e.dataTransfer.getData("application/x-xcoding-project-slot");
     if (!raw) return;
     e.preventDefault();
@@ -1720,16 +1709,36 @@ export default function App() {
       return moveItem(currentOrder, fromIdx, toIdx);
     })();
 
-    setDragPreviewSlotOrder(null);
-    dragPreviewSlotOrderRef.current = null;
+    if (!nextOrder) {
+      setDragPreviewSlotOrder(null);
+      dragPreviewSlotOrderRef.current = null;
+      projectReorderStartOrderRef.current = null;
+      projectReorderDidChangeRef.current = false;
+      return;
+    }
+
+    if (!isSingleProjectWindow && detachedSlots.has(fromSlot)) {
+      const res = await window.xcoding.window.attachSlot(fromSlot);
+      if (res.ok) {
+        setDetachedSlots((prev) => {
+          const next = new Set(prev);
+          next.delete(fromSlot);
+          return next;
+        });
+      }
+    }
+
+    // Keep the preview order visible until persistence finishes to avoid a snap-back.
+    dragPreviewSlotOrderRef.current = nextOrder;
+    setDragPreviewSlotOrder(nextOrder);
     projectReorderStartOrderRef.current = null;
     projectReorderDidChangeRef.current = false;
-    if (!nextOrder) return;
 
     if (currentOrder.join(",") !== nextOrder.join(",")) setProjectsState((s) => ({ ...s, slotOrder: nextOrder }));
     void window.xcoding.projects.reorderSlots(nextOrder).then((res) => {
-      if (res.ok) return;
-      setProjectsState((s) => ({ ...s, slotOrder: currentOrder }));
+      if (!res.ok) setProjectsState((s) => ({ ...s, slotOrder: currentOrder }));
+      setDragPreviewSlotOrder(null);
+      dragPreviewSlotOrderRef.current = null;
     });
   }
 
@@ -1891,6 +1900,7 @@ export default function App() {
                     projectRowRefs={projectRowRefs}
                     aiBySlot={aiBySlot}
                     activeProjectSlot={activeProjectSlot}
+                    draggingSlot={draggingSlotForUi}
                     setActiveProjectSlot={(slot) => {
                       setActiveProjectSlot(slot);
                       void window.xcoding.projects.setActiveSlot(slot);

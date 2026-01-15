@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { extractPromptRequest } from "./prompt";
 import { MonacoCodeBlock } from "../shared";
 import { isMustLanguage, parseFenceClassName } from "../../languageSupport";
+import { computeFileChangeSummary, reviewFilesFromDiffText } from "./diff/fileChangeSummary";
 import { useI18n } from "../../ui/i18n";
 
 type ApprovalRequest = {
@@ -263,79 +264,6 @@ function shouldShowThinkingPlaceholder(turn: TurnView) {
   if (lastType === "agentMessage") return false;
   if (lastType === "userMessage") return true;
   return readItemStatus(last).kind !== "running";
-}
-
-function computeFileChangeSummary(turn: TurnView) {
-  const items = Array.isArray(turn.items) ? turn.items : [];
-  const fileChanges = items.filter((it: any) => String(it?.type ?? "") === "fileChange");
-  if (!fileChanges.length) return null;
-
-  const byPath = new Map<string, { path: string; added: number; removed: number; kind?: string; parts: string[] }>();
-
-  const isRecognizableDiff = (diffText: string) => {
-    const raw = String(diffText ?? "");
-    if (!raw.trim()) return false;
-    return (
-      raw.includes("*** Begin Patch") ||
-      /^\*\*\* (Add File|Update File|Delete File):/m.test(raw) ||
-      raw.includes("diff --git ") ||
-      /^\s*(--- |\+\+\+ |@@)/m.test(raw)
-    );
-  };
-
-  const addCountsFromDiff = (diffText: string) => {
-    let added = 0;
-    let removed = 0;
-    for (const line of String(diffText ?? "").split(/\r?\n/)) {
-      if (!line) continue;
-      if (line.startsWith("+++ ") || line.startsWith("--- ")) continue;
-      if (line.startsWith("*** ")) continue;
-      if (line.startsWith("+")) added += 1;
-      else if (line.startsWith("-")) removed += 1;
-    }
-    return { added, removed };
-  };
-
-  let combinedDiff = "";
-  const applyPatchParts: string[] = [];
-  for (const fc of fileChanges) {
-    const changes = Array.isArray((fc as any)?.changes) ? (fc as any).changes : [];
-    for (const c of changes) {
-      const p = String(c?.path ?? "").trim();
-      if (!p) continue;
-      const kind = String(c?.kind?.type ?? c?.kind ?? "").trim() || undefined;
-      const diff = String(c?.diff ?? "");
-      const { added, removed } = addCountsFromDiff(diff);
-      const prev = byPath.get(p) ?? { path: p, added: 0, removed: 0, kind, parts: [] };
-      prev.added += added;
-      prev.removed += removed;
-      if (!prev.kind && kind) prev.kind = kind;
-      byPath.set(p, prev);
-      const trimmed = diff.trim();
-      if (!trimmed) continue;
-      prev.parts.push(trimmed);
-      if (isRecognizableDiff(trimmed)) combinedDiff += (combinedDiff ? "\n" : "") + trimmed + "\n";
-      else applyPatchParts.push(`*** Update File: ${p}\n${trimmed}\n`);
-    }
-  }
-
-  const files = Array.from(byPath.values())
-    .map((f) => ({ path: f.path, added: f.added, removed: f.removed }))
-    .sort((a, b) => a.path.localeCompare(b.path));
-  if (!files.length) return null;
-  const reviewFiles = Array.from(byPath.values())
-    .map((f) => ({ path: f.path, added: f.added, removed: f.removed, kind: f.kind, diff: f.parts.join("\n").trim() }))
-    .sort((a, b) => a.path.localeCompare(b.path));
-  const fallbackDiff = typeof (turn as any)?.diff === "string" ? String((turn as any).diff) : "";
-  const fallbackTrimmed = fallbackDiff.trim();
-  const diff = fallbackTrimmed && isRecognizableDiff(fallbackTrimmed)
-    ? fallbackTrimmed
-    : combinedDiff.trim()
-      ? combinedDiff.trim()
-      : applyPatchParts.length
-        ? `*** Begin Patch\n${applyPatchParts.join("\n").trim()}\n*** End Patch`
-        : fallbackTrimmed || "";
-  return { files, diff, reviewFiles };
 }
 
 function titleForItem(item: any) {
@@ -721,29 +649,42 @@ export default function CodexThreadView({
       className="min-h-0 flex-1 overflow-auto p-2"
       style={{ paddingBottom: `calc(${bottomInset}px + env(safe-area-inset-bottom, 0px))` }}
     >
-      {!thread ? (
-        <div className="flex h-full min-h-0 items-center justify-center p-6 text-sm text-[var(--vscode-descriptionForeground)]">{t("codexSelectOrStartConversation")}</div>
-      ) : null}
+        {!thread ? (
+          <div className="flex h-full min-h-0 items-center justify-center p-6 text-sm text-[var(--vscode-descriptionForeground)]">{t("codexSelectOrStartConversation")}</div>
+        ) : null}
 
-      {/* Intentionally no empty-state placeholder. */}
+        {/* Intentionally no empty-state placeholder. */}
 
-      {maxTurns > safeVisibleTurnsCount ? (
-        <div className="mb-3 flex items-center justify-between rounded border border-token-border bg-token-input-background px-3 py-2 text-[12px]">
-          <div className="text-[var(--vscode-descriptionForeground)]">
-            {t("codexShowingLastTurns")} {safeVisibleTurnsCount} {t("codexOf")} {maxTurns} {t("codexTurns")}
+        {maxTurns > safeVisibleTurnsCount ? (
+          <div className="mb-3 flex items-center justify-between rounded border border-token-border bg-token-input-background px-3 py-2 text-[12px]">
+            <div className="text-[var(--vscode-descriptionForeground)]">
+              {t("codexShowingLastTurns")} {safeVisibleTurnsCount} {t("codexOf")} {maxTurns} {t("codexTurns")}
+            </div>
+            <button
+              className="rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-1 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
+              type="button"
+              onClick={() => setVisibleTurnsCount((c: number) => Math.min(maxTurns, c + maxTurnsToRender))}
+            >
+              Load more
+            </button>
           </div>
-          <button
-            className="rounded bg-[var(--vscode-button-secondaryBackground)] px-2 py-1 text-[11px] text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)]"
-            type="button"
-            onClick={() => setVisibleTurnsCount((c: number) => Math.min(maxTurns, c + maxTurnsToRender))}
-          >
-            Load more
-          </button>
-        </div>
-      ) : null}
+        ) : null}
 
-      {flattenedItems.map(({ turn, item, itemId, rowId, type }) => {
-        const approval = approvalsByItemId[itemId];
+        {flattenedItems.map(({ turn, item, itemId, rowId, type }) => {
+          const approval = approvalsByItemId[itemId];
+          const openFullReviewDiff = (activePath?: string) => {
+            const threadId = thread?.id;
+            if (!threadId) return;
+            const latest = computeFileChangeSummary(turn);
+            const diff = String((latest as any)?.diff ?? "");
+            const reviewFiles = Array.isArray((latest as any)?.reviewFiles) ? (latest as any).reviewFiles : [];
+            if (!reviewFiles.length && !diff.trim()) return;
+            window.dispatchEvent(
+              new CustomEvent("xcoding:openCodexDiff", {
+                detail: { title: "Review changes", diff, reviewFiles, threadId, turnId: turn.id, tabId: `review:${turn.id}`, activePath }
+              })
+            );
+          };
 
         if (type === "turnDiff") {
           const items = Array.isArray(turn.items) ? turn.items : [];
@@ -807,7 +748,7 @@ export default function CodexThreadView({
         if (type === "userMessage") {
           const content = item?.content;
           return (
-            <div key={itemId} className="mb-2 flex justify-end">
+            <div key={itemId} className="my-3 flex justify-end">
               <div className="max-w-[70%] rounded-2xl bg-black/10 px-3 py-2 text-[13px] leading-5 text-[var(--vscode-foreground)]">
                 <UserBlocks content={content} onOpenUrl={onOpenUrl} onOpenImage={onOpenImage} />
               </div>
@@ -821,7 +762,7 @@ export default function CodexThreadView({
           const text = String(item?.text ?? "");
           const ha = !isStreaming ? tryParseHelloAgentsBanner(text) : null;
           return (
-            <div key={itemId} className="my-1 py-1">
+            <div key={itemId} className="my-3 py-1">
               {isStreaming ? (
                 <pre className="whitespace-pre-wrap text-[13px] leading-[1.095rem] text-[var(--vscode-foreground)]">{text}</pre>
               ) : (
@@ -901,7 +842,17 @@ export default function CodexThreadView({
                 onClick={() => {
                   if (type === "turnDiff") {
                     const diff = String((item as any)?.diff ?? "");
-                    if (diff.trim()) window.dispatchEvent(new CustomEvent("xcoding:openCodexDiff", { detail: { title: "Codex Diff", diff, tabId: `diff:${turn.id}` } }));
+                    if (!diff.trim()) return;
+                    const reviewFiles = reviewFilesFromDiffText(diff);
+                    if (reviewFiles.length && thread?.id) {
+                      window.dispatchEvent(
+                        new CustomEvent("xcoding:openCodexDiff", {
+                          detail: { title: "Review changes", diff, reviewFiles, threadId: thread.id, turnId: turn.id, tabId: `review:${turn.id}` }
+                        })
+                      );
+                      return;
+                    }
+                    window.dispatchEvent(new CustomEvent("xcoding:openCodexDiff", { detail: { title: "Codex Diff", diff, tabId: `diff:${turn.id}` } }));
                     return;
                   }
                   if (type === "turnThinking") return;
@@ -1021,10 +972,15 @@ export default function CodexThreadView({
                     {Array.isArray(item?.changes) && item.changes.length ? (
                       <div className="grid gap-2">
                         {item.changes.map((c: any, i: number) => (
-                          <div key={`${itemId}:${i}`} className="grid gap-1">
-                            <div className="truncate text-[11px] text-[var(--vscode-descriptionForeground)]">
+                            <div key={`${itemId}:${i}`} className="grid gap-1">
+                            <button
+                              type="button"
+                              className="truncate text-left text-[11px] text-[var(--vscode-descriptionForeground)] hover:text-[var(--vscode-foreground)] hover:underline"
+                              onClick={() => openFullReviewDiff(String(c?.path ?? "").trim() || undefined)}
+                              title={t("codexOpenFullFileDiff")}
+                            >
                               {String(c?.path ?? "file")} · {String(c?.kind?.type ?? c?.kind ?? "change")}
-                            </div>
+                            </button>
                             {String(c?.diff ?? "").trim() ? (
                               <DiffLineBlock diff={String(c?.diff ?? "")} />
                             ) : (
@@ -1036,6 +992,16 @@ export default function CodexThreadView({
                     ) : (
                       <div className="text-[var(--vscode-descriptionForeground)]">{t("codexNoChanges")}</div>
                     )}
+                    <div className="mt-1 flex items-center justify-end">
+                      <button
+                        type="button"
+                        className="rounded px-2 py-1 text-[11px] font-semibold text-[var(--vscode-foreground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                        onClick={() => openFullReviewDiff()}
+                        title={t("codexOpenFullFileDiff")}
+                      >
+                        {t("review")} ↗
+                      </button>
+                    </div>
                     {turn.snapshot?.status === "available" ? (
                       <div className="mt-2 flex items-center justify-end gap-2">
                         <button

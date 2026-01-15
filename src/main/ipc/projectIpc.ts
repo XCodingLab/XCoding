@@ -1,4 +1,5 @@
 import { clipboard, ipcMain, shell } from "electron";
+import path from "node:path";
 import type { LspLanguage, ProjectServiceRequestNoId } from "../shared/projectServiceProtocol";
 import { sendToProjectService } from "../managers/projectServiceManager";
 import { getProjectForSlot } from "../stores/projectsStore";
@@ -302,6 +303,17 @@ export function registerProjectIpc() {
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: e instanceof Error ? e.message : "open_external_failed" };
+    }
+  });
+
+  ipcMain.handle("os:revealInFileManager", async (_event, { path: targetPath }: { path?: string }) => {
+    try {
+      const normalized = String(targetPath ?? "").trim();
+      if (!normalized) return { ok: false, reason: "missing_path" };
+      shell.showItemInFolder(path.resolve(normalized));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : "reveal_failed" };
     }
   });
 }

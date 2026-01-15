@@ -75,7 +75,8 @@
   --glass-highlight: rgba(255, 255, 255, 0.1);
   --glass-shadow: rgba(0, 0, 0, 0.3);
 
-  --aurora-bg: radial-gradient(ellipse 80% 80% at 50% -20%, rgba(120, 119, 198, 0.3), rgba(255, 255, 255, 0));
+  /* Keep startup neutral to avoid color flash before theme packs load */
+  --aurora-bg: none;
   --aurora-base: #05050a;
 
   --padding-row-x: calc(var(--spacing) * 2);

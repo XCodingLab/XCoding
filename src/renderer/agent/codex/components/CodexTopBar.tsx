@@ -1,13 +1,11 @@
-import { FileDiff, History, Plus, Settings } from "lucide-react";
+import { History, Plus, Settings } from "lucide-react";
 
 type Props = {
   title: string;
   t: (key: any) => string;
-  disableDiff: boolean;
   disableHistory: boolean;
   disableSettings: boolean;
   disableNewThread: boolean;
-  onToggleDiff: () => void;
   onToggleHistory: () => void;
   onOpenSettings: () => void;
   onStartNewThread: () => void;
@@ -16,11 +14,9 @@ type Props = {
 export default function CodexTopBar({
   title,
   t,
-  disableDiff,
   disableHistory,
   disableSettings,
   disableNewThread,
-  onToggleDiff,
   onToggleHistory,
   onOpenSettings,
   onStartNewThread
@@ -32,15 +28,6 @@ export default function CodexTopBar({
       </div>
 
       <div className="flex items-center gap-1">
-        <button
-          className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] disabled:opacity-50"
-          onClick={onToggleDiff}
-          type="button"
-          title={t("toggleDiffPanel")}
-          disabled={disableDiff}
-        >
-          <FileDiff className="h-4 w-4" />
-        </button>
         <button
           className="rounded p-1 text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)] disabled:opacity-50"
           onClick={onToggleHistory}

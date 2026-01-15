@@ -4,10 +4,45 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>XCoding</title>
+    <script>
+      (() => {
+        try {
+          const root = document.documentElement;
+          const raw = localStorage.getItem("xcoding.lastThemeCssVars");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const cssVars = parsed?.cssVars;
+            const appearance = parsed?.appearance;
+            if (appearance === "dark" || appearance === "light") {
+              root.dataset.theme = appearance;
+              root.style.colorScheme = appearance;
+            }
+            if (cssVars && typeof cssVars === "object") {
+              for (const [k, v] of Object.entries(cssVars)) {
+                if (typeof k === "string" && k.startsWith("--")) root.style.setProperty(k, String(v ?? ""));
+              }
+              const bg = cssVars["--vscode-editor-background"] || cssVars["--aurora-base"];
+              if (bg) {
+                root.style.backgroundColor = bg;
+                document.body && (document.body.style.backgroundColor = bg);
+              }
+            }
+          } else {
+            const bg = localStorage.getItem("xcoding.lastThemeBg");
+            if (bg) {
+              root.style.backgroundColor = bg;
+              root.style.setProperty("--vscode-editor-background", bg);
+              document.body && (document.body.style.backgroundColor = bg);
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
+    </script>
   </head>
-  <body class="bg-neutral-950 text-neutral-100">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/renderer/main.tsx"></script>
   </body>
 </html>
-

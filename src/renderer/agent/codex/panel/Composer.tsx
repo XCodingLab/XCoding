@@ -1,11 +1,49 @@
 import { Bot, Brain, Check, ChevronDown, Cpu, Image as ImageIcon, Link2, MessageSquare, Paperclip, Plus, ShieldAlert, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import type { ReviewFile } from "../diff/fileChangeSummary";
 import type { CodexMode, ComposerAttachment, ReasoningEffort } from "./types";
 import StatusModal from "./StatusModal";
 import { useI18n } from "../../../ui/i18n";
 
 const localImageDataUrlCache = new Map<string, string>();
+
+function normalizeKind(kind?: string) {
+  return String(kind ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+}
+
+function isAddKind(kind?: string) {
+  const k = normalizeKind(kind);
+  if (!k) return false;
+  return k === "add" || k === "added" || k === "create" || k === "new" || k === "addfile" || k === "createfile" || k === "newfile";
+}
+
+function isDeleteKind(kind?: string) {
+  const k = normalizeKind(kind);
+  if (!k) return false;
+  return (
+    k === "delete" ||
+    k === "del" ||
+    k === "rm" ||
+    k === "remove" ||
+    k === "deleted" ||
+    k === "removed" ||
+    k === "deletefile" ||
+    k === "removefile" ||
+    k === "deletedfile"
+  );
+}
+
+function countTextLines(text: string) {
+  const t = String(text ?? "").replace(/\r\n/g, "\n");
+  if (!t) return 0;
+  const parts = t.split("\n");
+  if (parts.length && parts[parts.length - 1] === "") parts.pop();
+  return parts.length;
+}
 
 function LocalImageThumb({ path, alt, className }: { path?: string; alt?: string; className?: string }) {
   const [url, setUrl] = useState(() => {
@@ -90,12 +128,22 @@ function formatTokensShort(n: number, numberFormat: Intl.NumberFormat) {
 }
 
 type Props = {
+  slot: number;
   projectRootPath?: string;
   statusState: "idle" | "starting" | "ready" | "exited" | "error";
   statusError?: string;
   lastStderr: string;
   isBusy: boolean;
   isTurnInProgress: boolean;
+  liveChangesSummary?: {
+    threadId: string;
+    turnId: string;
+    files: Array<{ path: string; added: number; removed: number }>;
+    totalAdded: number;
+    totalRemoved: number;
+    diff: string;
+    reviewFiles: ReviewFile[];
+  } | null;
   input: string;
   onChangeInput: (value: string) => void;
   onSend: () => void;
@@ -152,12 +200,14 @@ type ReviewTarget =
   | { type: "custom"; instructions: string };
 
 export default function Composer({
+  slot,
   projectRootPath,
   statusState,
   statusError,
   lastStderr,
   isBusy,
   isTurnInProgress,
+  liveChangesSummary,
   input,
   onChangeInput,
   onSend,
@@ -209,6 +259,9 @@ export default function Composer({
   const [skills, setSkills] = useState<Array<{ name: string; description: string; shortDescription?: string | null; path: string }>>([]);
   const [skillsState, setSkillsState] = useState<"idle" | "loading" | "error" | "ready">("idle");
   const [pasteError, setPasteError] = useState<string>("");
+  const [liveChangesOpen, setLiveChangesOpen] = useState(false);
+  const lastLiveTurnIdRef = useRef<string>("");
+  const [liveCountsByPath, setLiveCountsByPath] = useState<Record<string, { added: number; removed: number }>>({});
   const footerRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<HTMLDivElement | null>(null);
   const [compactPickers, setCompactPickers] = useState(false);
@@ -235,6 +288,104 @@ export default function Composer({
     if (effort === "xhigh") return "XHigh";
     return effort.charAt(0).toUpperCase() + effort.slice(1);
   }, [effort]);
+
+  useEffect(() => {
+    const nextTurnId = String(liveChangesSummary?.turnId ?? "");
+    if (lastLiveTurnIdRef.current === nextTurnId) return;
+    lastLiveTurnIdRef.current = nextTurnId;
+    setLiveChangesOpen(false);
+    setLiveCountsByPath({});
+  }, [liveChangesSummary?.turnId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!liveChangesSummary?.turnId) return () => {};
+    const threadId = liveChangesSummary.threadId;
+    const turnId = liveChangesSummary.turnId;
+    const reviewFiles = Array.isArray(liveChangesSummary.reviewFiles) ? liveChangesSummary.reviewFiles : [];
+    const targets = reviewFiles.filter((f) => {
+      const plus = Number(f.added ?? 0);
+      const minus = Number(f.removed ?? 0);
+      if (isAddKind(f.kind) && plus === 0) return true;
+      if (isDeleteKind(f.kind) && minus === 0) return true;
+      return false;
+    });
+    if (!targets.length) return () => {};
+
+    void (async () => {
+      const pairs = await Promise.all(
+        targets.map(async (f) => {
+          const compute = (originalText: string, modifiedText: string) => {
+            if (isAddKind(f.kind)) return { path: f.path, added: countTextLines(modifiedText), removed: 0 };
+            if (isDeleteKind(f.kind)) return { path: f.path, added: 0, removed: countTextLines(originalText) };
+            return null;
+          };
+
+          const res = await window.xcoding.codex.turnFileDiff({ threadId, turnId, path: f.path });
+          if (res.ok && !res.isBinary && !res.truncated) {
+            const computed = compute(res.original, res.modified);
+            const needsGitFallback = (isDeleteKind(f.kind) && !String(res.original ?? "").trim()) || (isAddKind(f.kind) && !String(res.modified ?? "").trim());
+            if (computed && !needsGitFallback) return computed;
+          }
+
+          const gitRes = await window.xcoding.project.gitFileDiff({ slot, path: f.path, mode: "working" });
+          if (gitRes.ok && !gitRes.isBinary && !gitRes.truncated) return compute(String(gitRes.original ?? ""), String(gitRes.modified ?? ""));
+
+          return null;
+        })
+      );
+      if (cancelled) return;
+      const next: Record<string, { added: number; removed: number }> = {};
+      for (const p of pairs) {
+        if (!p) continue;
+        next[p.path] = { added: p.added, removed: p.removed };
+      }
+      if (Object.keys(next).length) setLiveCountsByPath((prev) => ({ ...prev, ...next }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [liveChangesSummary?.threadId, liveChangesSummary?.turnId, liveChangesSummary?.reviewFiles, slot]);
+
+  const displayedLiveCounts = useMemo(() => {
+    if (!liveChangesSummary?.files?.length) return null;
+    const files = liveChangesSummary.files.map((f) => {
+      const override = liveCountsByPath[f.path];
+      return {
+        ...f,
+        added: Number(override?.added ?? f.added ?? 0),
+        removed: Number(override?.removed ?? f.removed ?? 0)
+      };
+    });
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    for (const f of files) {
+      totalAdded += Number(f.added ?? 0);
+      totalRemoved += Number(f.removed ?? 0);
+    }
+    return { files, totalAdded, totalRemoved };
+  }, [liveChangesSummary?.files, liveCountsByPath]);
+
+  const openLiveReviewDiff = (activePath?: string) => {
+    if (!liveChangesSummary) return;
+    const diff = String(liveChangesSummary.diff ?? "");
+    const reviewFiles = Array.isArray(liveChangesSummary.reviewFiles) ? liveChangesSummary.reviewFiles : [];
+    if (!reviewFiles.length && !diff.trim()) return;
+    window.dispatchEvent(
+      new CustomEvent("xcoding:openCodexDiff", {
+        detail: {
+          title: "Review changes",
+          diff,
+          reviewFiles,
+          threadId: liveChangesSummary.threadId,
+          turnId: liveChangesSummary.turnId,
+          tabId: `review:${liveChangesSummary.turnId}`,
+          activePath
+        }
+      })
+    );
+  };
 
   useEffect(() => {
     const el = controlsRef.current;
@@ -556,6 +707,62 @@ export default function Composer({
       ) : null}
 
       <StatusModal open={isStatusOpen} threadId={threadId} tokenUsage={tokenUsage} rateLimits={rateLimits} onClose={() => setIsStatusOpen(false)} />
+
+      {liveChangesSummary?.files?.length ? (
+        <div className="mb-2">
+          <button
+            type="button"
+            className={[
+              "flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-input-background)] px-3 py-2",
+              "text-[11px] text-[var(--vscode-foreground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            ].join(" ")}
+            onClick={() => setLiveChangesOpen((v) => !v)}
+            aria-expanded={liveChangesOpen}
+          >
+            <div className="min-w-0 truncate font-semibold">
+              {liveChangesSummary.files.length} {t("codexFilesChanged")}
+            </div>
+            <div className="flex shrink-0 items-center gap-2 tabular-nums">
+              <span className="text-[color-mix(in_srgb,#89d185_90%,white)]">{`+${Number(displayedLiveCounts?.totalAdded ?? liveChangesSummary.totalAdded ?? 0)}`}</span>
+              <span className="text-[color-mix(in_srgb,#f14c4c_90%,white)]">{`-${Number(displayedLiveCounts?.totalRemoved ?? liveChangesSummary.totalRemoved ?? 0)}`}</span>
+              <ChevronDown className={["h-3.5 w-3.5 text-[var(--vscode-descriptionForeground)] transition-transform duration-150", liveChangesOpen ? "" : "-rotate-90"].join(" ")} />
+            </div>
+          </button>
+          {liveChangesOpen ? (
+            <div className="mt-1 overflow-hidden rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]">
+              <div className="max-h-48 overflow-auto p-1">
+                {(displayedLiveCounts?.files ?? liveChangesSummary.files).map((f) => (
+                  <button
+                    key={f.path}
+                    type="button"
+                    className="w-full rounded px-2 py-1 text-left hover:bg-[var(--vscode-list-hoverBackground)]"
+                    onClick={() => openLiveReviewDiff(f.path)}
+                    title={f.path}
+                  >
+                    <div className="flex min-w-0 items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1 truncate text-[11px] text-[var(--vscode-foreground)]">{f.path}</div>
+                      <div className="shrink-0 tabular-nums text-[10px]">
+                        <span className="text-[color-mix(in_srgb,#89d185_90%,white)]">{`+${Number(f.added ?? 0)}`}</span>
+                        <span className="ml-2 text-[color-mix(in_srgb,#f14c4c_90%,white)]">{`-${Number(f.removed ?? 0)}`}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                <div className="mt-1 flex items-center justify-end px-2 pb-1">
+                  <button
+                    type="button"
+                    className="rounded px-2 py-1 text-[11px] font-semibold text-[var(--vscode-foreground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+                    onClick={() => openLiveReviewDiff()}
+                    title={t("codexOpenFullFileDiff")}
+                  >
+                    {t("review")} ↗
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="relative flex flex-col gap-2 rounded-2xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-input-background)] px-4 py-3 text-[var(--vscode-input-foreground)]">
         <input

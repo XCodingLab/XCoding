@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld("xcoding", {
   window: {
     create: (payload) => ipcRenderer.invoke("window:new", payload),
     getDetachedSlots: () => ipcRenderer.invoke("window:getDetachedSlots"),
+    attachSlot: (slot) => ipcRenderer.invoke("window:attachSlot", { slot }),
+    focus: () => ipcRenderer.invoke("window:focus"),
     minimize: () => ipcRenderer.invoke("window:minimize"),
     maximizeToggle: () => ipcRenderer.invoke("window:maximizeToggle"),
     close: () => ipcRenderer.invoke("window:close"),
@@ -220,7 +222,8 @@ contextBridge.exposeInMainWorld("xcoding", {
   },
   os: {
     copyText: (text) => ipcRenderer.invoke("os:copyText", { text }),
-    openExternal: (url) => ipcRenderer.invoke("os:openExternal", { url })
+    openExternal: (url) => ipcRenderer.invoke("os:openExternal", { url }),
+    revealInFileManager: (targetPath) => ipcRenderer.invoke("os:revealInFileManager", { path: targetPath })
   },
   // window controls are defined above under xcoding.window
 });

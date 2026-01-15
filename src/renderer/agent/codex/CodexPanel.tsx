@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import CodexDiffView from "./CodexDiffView";
 import CodexThreadView from "./CodexThreadView";
 import CodexHistoryOverlay from "./components/CodexHistoryOverlay";
 import CodexTopBar from "./components/CodexTopBar";
@@ -8,6 +7,7 @@ import { useCodexBridge } from "./hooks/useCodexBridge";
 import Composer from "./panel/Composer";
 import CodexPlanDock from "./panel/components/CodexPlanDock";
 import SettingsModal from "./panel/SettingsModal";
+import { computeFileChangeSummary, reviewFilesFromDiffText } from "./diff/fileChangeSummary";
 import { createCodexStore, normalizeThread, normalizeTurn } from "./store/codexStore";
 import { createCodexApprovalHandler, createCodexNotificationHandler } from "./store/codexNotifications";
 import { useI18n } from "../../ui/i18n";
@@ -43,7 +43,6 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
   const isPanelActive = isActive !== false;
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isDiffPanelOpen, setIsDiffPanelOpen] = useState(false);
   const [planDockOpenByThreadId, setPlanDockOpenByThreadId] = useState<Record<string, boolean>>({});
   const [planDockHeightPx, setPlanDockHeightPx] = useState(0);
   const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null);
@@ -195,7 +194,6 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
     isHistoryOpen,
     activeThreadId,
     query,
-    isDiffPanelOpen,
     input,
     attachments,
     isPlusMenuOpen,
@@ -203,7 +201,6 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
     setIsHistoryOpen,
     setActiveThreadId: setActiveThreadIdWithRef,
     setQuery,
-    setIsDiffPanelOpen,
     setInput,
     setAttachments,
     setIsPlusMenuOpen,
@@ -350,7 +347,6 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
     // Defer `thread/start` until the first send (see sendTurn()).
     setActiveThreadIdWithRef(null);
     setLoadingThreadId(null);
-    setIsDiffPanelOpen(false);
     setInput("");
     setAttachments([]);
     setIsPlusMenuOpen(false);
@@ -472,11 +468,52 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
     })
   );
 
-  const latestTurnDiff = (() => {
+  const liveChangesSummary = useMemo(() => {
     if (!activeThread) return null;
-    const diff = typeof activeThread.latestDiff === "string" ? activeThread.latestDiff : null;
-    return diff && diff.trim() ? diff : null;
-  })();
+    const turns = Array.isArray(activeThread.turns) ? activeThread.turns : [];
+    const reversed = [...turns].reverse();
+    const isRunning = (turn: any) => {
+      const s = String(turn?.status ?? "").toLowerCase();
+      return s.includes("progress") || s === "inprogress" || s === "in_progress";
+    };
+    const runningTurn = reversed.find((t) => isRunning(t)) ?? null;
+    const candidates = runningTurn ? [runningTurn] : reversed;
+
+    for (const t of candidates) {
+      const summary = computeFileChangeSummary(t as any);
+      if (summary?.files?.length) {
+        let totalAdded = 0;
+        let totalRemoved = 0;
+        for (const f of summary.files) {
+          totalAdded += Number(f.added ?? 0);
+          totalRemoved += Number(f.removed ?? 0);
+        }
+        return {
+          threadId: activeThread.id,
+          turnId: t.id,
+          files: summary.files,
+          totalAdded,
+          totalRemoved,
+          diff: summary.diff,
+          reviewFiles: summary.reviewFiles
+        };
+      }
+
+      const diffText = typeof (t as any)?.diff === "string" ? String((t as any).diff) : "";
+      const reviewFiles = reviewFilesFromDiffText(diffText);
+      if (!reviewFiles.length) continue;
+      const files = reviewFiles.map((f) => ({ path: f.path, added: f.added, removed: f.removed }));
+      let totalAdded = 0;
+      let totalRemoved = 0;
+      for (const f of files) {
+        totalAdded += Number(f.added ?? 0);
+        totalRemoved += Number(f.removed ?? 0);
+      }
+      return { threadId: activeThread.id, turnId: t.id, files, totalAdded, totalRemoved, diff: diffText, reviewFiles };
+    }
+
+    return null;
+  }, [activeThread, version]);
 
   const tokenUsage = activeThreadId ? (storeRef.current.tokenUsageByThreadId?.[activeThreadId] ?? null) : null;
   const rateLimits = storeRef.current.rateLimits ?? null;
@@ -508,7 +545,6 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
 
   const closeHistory = useCallback(() => setIsHistoryOpen(false), []);
   const toggleHistory = useCallback(() => setIsHistoryOpen((v) => !v), []);
-  const toggleDiffPanel = useCallback(() => setIsDiffPanelOpen((v) => !v), []);
   const openSettings = useCallback(() => {
     window.dispatchEvent(new CustomEvent("xcoding:dismissOverlays"));
     setIsSettingsOpen(true);
@@ -519,11 +555,9 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
       <CodexTopBar
         title={activeThreadTitle || "Codex"}
         t={t}
-        disableDiff={!activeThread || isBusy || isTurnInProgress}
         disableHistory={isBusy || isTurnInProgress}
         disableSettings={isBusy}
         disableNewThread={isBusy || isTurnInProgress || !projectRootPath}
-        onToggleDiff={toggleDiffPanel}
         onToggleHistory={toggleHistory}
         onOpenSettings={openSettings}
         onStartNewThread={startNewThread}
@@ -580,24 +614,6 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
           </div>
         ) : null}
 
-        {isDiffPanelOpen ? (
-          <div className="w-[420px] shrink-0 border-l border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]">
-            <div className="flex h-9 items-center justify-between gap-2 border-b border-[var(--vscode-panel-border)] px-2 text-[12px]">
-              <div className="truncate font-semibold text-[var(--vscode-foreground)]">{t("diff")}</div>
-              <button
-                className="rounded px-2 py-1 text-[11px] text-[var(--vscode-descriptionForeground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
-                type="button"
-                onClick={() => setIsDiffPanelOpen(false)}
-              >
-                {t("close")}
-              </button>
-            </div>
-            <div className="h-[calc(100%-2.25rem)] min-h-0">
-              <CodexDiffView diff={latestTurnDiff ?? ""} />
-            </div>
-          </div>
-        ) : null}
-
         <CodexHistoryOverlay
           open={isHistoryOpen}
           t={t}
@@ -617,12 +633,14 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
       </div>
 
       <Composer
+        slot={slot}
         projectRootPath={projectRootPath}
         statusState={status.state}
         statusError={status.error}
         lastStderr={lastStderr}
         isBusy={isBusy}
         isTurnInProgress={isTurnInProgress}
+        liveChangesSummary={liveChangesSummary}
         input={input}
         onChangeInput={setInput}
         onSend={() => void sendTurn(input)}

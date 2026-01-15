@@ -183,8 +183,7 @@ export function registerCodexIpc() {
               const m = line.match(/^\*\*\* (Add File|Update File|Delete File): (.+)$/);
               if (m && m[2]) {
                 flush();
-                const kind = m[1] === "Add File" ? "add" : m[1] === "Delete File" ? "delete" : "update";
-                currentFile = { path: m[2].trim(), kind, lines: [] };
+                currentFile = { path: String(m[2]).trim(), kind: String(m[1]).replaceAll(" ", "").toLowerCase(), lines: [line] };
                 continue;
               }
               if (!currentFile) continue;

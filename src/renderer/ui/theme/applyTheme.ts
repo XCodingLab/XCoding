@@ -42,4 +42,20 @@ export function applyResolvedThemePack(theme: ResolvedThemePack) {
   } catch (e) {
     if (import.meta.env.DEV) console.warn("monaco.setTheme failed", e);
   }
+
+  // Persist a simple background color hint to suppress startup flash before the theme pack loads.
+  try {
+    const bg =
+      (theme.cssVars && (theme.cssVars["--aurora-base"] || theme.cssVars["--vscode-editor-background"])) ||
+      (theme.monacoThemeData?.colors?.["editor.background"] as string | undefined) ||
+      "";
+    if (bg) localStorage.setItem("xcoding.lastThemeBg", String(bg));
+    // Persist full cssVars for faster first paint on next launch.
+    if (theme.cssVars) {
+      const payload = { cssVars: theme.cssVars, appearance: theme.appearance };
+      localStorage.setItem("xcoding.lastThemeCssVars", JSON.stringify(payload));
+    }
+  } catch {
+    // ignore
+  }
 }

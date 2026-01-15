@@ -43,6 +43,28 @@ export function registerWindowIpc({
 
   ipcMain.handle("window:getDetachedSlots", () => ({ ok: true, slots: listDetachedSlots() }));
 
+  ipcMain.handle("window:attachSlot", async (_event, { slot }: { slot: number }) => {
+    if (typeof slot !== "number" || slot < 1 || slot > 8) return { ok: false, reason: "invalid_slot" as const };
+    const singleWin = findSingleWindowForSlot(slot);
+    if (singleWin) {
+      singleSlotByWindowId.delete(singleWin.id);
+      broadcastDetachedSlots();
+      try {
+        singleWin.close();
+      } catch {
+        // ignore
+      }
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle("window:focus", (event) => {
+    const win = getWindowFromEvent(event) ?? mainWindow;
+    if (!win) return { ok: false, reason: "no_window" as const };
+    focusWindow(win);
+    return { ok: true };
+  });
+
   ipcMain.handle("window:new", async (_event, { slot, mode }: { slot?: number; mode?: "single" | "multi" }) => {
     const desiredSlot = typeof slot === "number" && slot >= 1 && slot <= 8 ? slot : 1;
     const desiredMode = mode === "single" || mode === "multi" ? mode : "multi";
@@ -75,4 +97,3 @@ export function registerWindowIpc({
     return { ok: true, windowId: win.id };
   });
 }
-

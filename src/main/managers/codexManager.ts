@@ -11,6 +11,7 @@ type CodexLastStatus = { state: "idle" | "starting" | "ready" | "exited" | "erro
 type CodexTurnSnapshotEntry = { relPath: string; absPath: string; existed: boolean; snapshotFile: string };
 type CodexTurnSnapshot = { threadId: string; turnId: string; cwd: string; createdAt: number; entries: CodexTurnSnapshotEntry[] };
 const codexTurnSnapshotsByKey = new Map<string, CodexTurnSnapshot>();
+const codexThreadCwdById = new Map<string, string>();
 
 let codexBridge: CodexBridge | null = null;
 let codexHomePath: string | null = null;
@@ -29,6 +30,7 @@ export function disposeCodexBridge(reason: string) {
     // ignore
   }
   codexBridge = null;
+  codexThreadCwdById.clear();
   if (codexLastStatus.state === "ready" || codexLastStatus.state === "starting") {
     codexLastStatus = { state: "exited", error: `codex_disposed:${reason}` };
   }
@@ -44,6 +46,7 @@ export function disposeCodexBridgeForUiGone() {
   }
   codexBridge = null;
   codexHomePath = null;
+  codexThreadCwdById.clear();
 }
 
 export function ensureCodexBridge() {
@@ -55,6 +58,7 @@ export function ensureCodexBridge() {
   if (codexBridge && codexHomePath === desiredCodexHome) return codexBridge;
   if (codexBridge) codexBridge.dispose();
   codexHomePath = desiredCodexHome;
+  codexThreadCwdById.clear();
   codexBridge = new CodexBridge({
     clientInfo: { name: "xcoding-ide", title: "XCoding", version: app.getVersion() },
     defaultCwd: process.cwd(),
@@ -63,8 +67,21 @@ export function ensureCodexBridge() {
     onEvent: (event) => {
       if (event.kind === "request") {
         codexPendingRequestsById.set(Number(event.id), { method: String(event.method ?? ""), params: event.params });
+        try {
+          maybeSnapshotApprovalRequest(String(event.method ?? ""), event.params);
+        } catch {
+          // ignore
+        }
         broadcast("codex:request", event);
       } else {
+        if (event.kind === "notification") {
+          try {
+            maybeTrackThreadCwd(event.method, event.params);
+            maybeSnapshotToolCall(event.method, event.params);
+          } catch {
+            // ignore
+          }
+        }
         if (event.kind === "status") {
           codexLastStatus = { state: event.status, error: typeof (event as any).error === "string" ? (event as any).error : undefined };
         }
@@ -182,7 +199,9 @@ function ensureCodexSnapshotsRoot() {
 }
 
 function safeRelPath(input: string) {
-  return String(input ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const raw = String(input ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const normalized = path.posix.normalize(raw).replace(/^(\.\/)+/, "");
+  return normalized === "." ? "" : normalized;
 }
 
 export function extractCodexFileChangePaths(params: any): string[] {
@@ -192,7 +211,7 @@ export function extractCodexFileChangePaths(params: any): string[] {
   const paths = changes
     .map((c: any) => (c && typeof c === "object" ? String(c.path ?? "") : ""))
     .filter(Boolean)
-    .map(safeRelPath);
+    .map((p: string) => (path.isAbsolute(p) ? path.resolve(p) : safeRelPath(p)));
   return Array.from(new Set(paths));
 }
 
@@ -201,6 +220,64 @@ function resolveCodexPath(cwd: string, relOrAbs: string) {
   if (!p) return null;
   if (path.isAbsolute(p)) return p;
   return path.join(cwd, safeRelPath(p));
+}
+
+function extractApplyPatchPaths(patchText: string): string[] {
+  const raw = String(patchText ?? "");
+  if (!raw.trim()) return [];
+  const out: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const m = line.match(/^\*\*\* (Add File|Update File|Delete File): (.+)$/);
+    if (!m?.[2]) continue;
+    const p = String(m[2]).trim();
+    const normalized = path.isAbsolute(p) ? path.resolve(p) : safeRelPath(p);
+    if (normalized) out.push(normalized);
+  }
+  return Array.from(new Set(out));
+}
+
+function resolveSnapshotCwd(threadId: string, params: any): string {
+  const fromParams = typeof params?.cwd === "string" ? String(params.cwd).trim() : "";
+  const fromThread = codexThreadCwdById.get(threadId) ?? "";
+  return fromParams || fromThread || process.cwd();
+}
+
+function maybeTrackThreadCwd(method: string, params: any) {
+  if (method !== "thread/started" && method !== "thread/resumed") return;
+  const thread = params?.thread && typeof params.thread === "object" ? params.thread : null;
+  const threadId = String(thread?.id ?? params?.threadId ?? "").trim();
+  const cwd = typeof thread?.cwd === "string" ? thread.cwd.trim() : typeof params?.cwd === "string" ? String(params.cwd).trim() : "";
+  if (threadId && cwd) codexThreadCwdById.set(threadId, cwd);
+}
+
+function maybeSnapshotApprovalRequest(method: string, params: any) {
+  if (method !== "item/fileChange/requestApproval") return;
+  const threadId = String(params?.threadId ?? params?.thread_id ?? "").trim();
+  const turnId = String(params?.turnId ?? params?.turn_id ?? "").trim();
+  if (!threadId || !turnId) return;
+
+  const relPaths = extractCodexFileChangePaths(params);
+  if (!relPaths.length) return;
+  const cwd = resolveSnapshotCwd(threadId, params);
+  snapshotCodexTurnFiles(threadId, turnId, cwd, relPaths);
+}
+
+function maybeSnapshotToolCall(method: string, params: any) {
+  if (method !== "item/toolCall/started" && method !== "item/toolCall/updated") return;
+  const name = String(params?.name ?? "");
+  if (name !== "apply_patch") return;
+  const threadId = String(params?.threadId ?? params?.thread_id ?? "").trim();
+  const turnId = String(params?.turnId ?? params?.turn_id ?? "").trim();
+  if (!threadId || !turnId) return;
+
+  const pathsFromChanges = extractCodexFileChangePaths(params);
+  const patchText = typeof params?.input === "string" ? params.input : "";
+  const pathsFromPatch = pathsFromChanges.length ? [] : extractApplyPatchPaths(patchText);
+  const relPaths = pathsFromChanges.length ? pathsFromChanges : pathsFromPatch;
+  if (!relPaths.length) return;
+
+  const cwd = resolveSnapshotCwd(threadId, params);
+  snapshotCodexTurnFiles(threadId, turnId, cwd, relPaths);
 }
 
 function snapshotCodexTurnFiles(threadId: string, turnId: string, cwd: string, relPaths: string[]) {
@@ -218,7 +295,8 @@ function snapshotCodexTurnFiles(threadId: string, turnId: string, cwd: string, r
     if (!abs) continue;
     const resolved = path.resolve(abs);
     const resolvedCwd = path.resolve(cwd);
-    if (!resolved.startsWith(resolvedCwd + path.sep) && resolved !== resolvedCwd) continue;
+    const isAbsoluteInput = path.isAbsolute(rel);
+    if (!isAbsoluteInput && !resolved.startsWith(resolvedCwd + path.sep) && resolved !== resolvedCwd) continue;
     if (snapshot.entries.some((e) => e.absPath === resolved)) continue;
 
     const existed = fs.existsSync(resolved);
@@ -347,7 +425,9 @@ export function readCodexTurnFileDiff({
   | { ok: false; reason: string } {
   const normalizedThreadId = String(threadId ?? "").trim();
   const normalizedTurnId = String(turnId ?? "").trim();
-  const normalizedRelPath = safeRelPath(relPath);
+  const rawPath = String(relPath ?? "").trim();
+  const requestedAbs = rawPath && path.isAbsolute(rawPath) ? path.resolve(rawPath) : "";
+  const normalizedRelPath = safeRelPath(rawPath);
   const limit = typeof maxBytes === "number" ? Math.max(50_000, Math.min(15_000_000, Math.floor(maxBytes))) : 3_000_000;
 
   if (!normalizedThreadId || !normalizedTurnId || !normalizedRelPath) return { ok: false, reason: "missing_ids_or_path" };
@@ -358,7 +438,15 @@ export function readCodexTurnFileDiff({
   const resolvedSnapshotCwd = snapshotCwd ? path.resolve(snapshotCwd) : "";
   if (!resolvedSnapshotCwd) return { ok: false, reason: "invalid_snapshot_cwd" };
   const entries = Array.isArray(snapshot?.entries) ? snapshot.entries : [];
-  const entry = entries.find((e: any) => safeRelPath(e?.relPath) === normalizedRelPath) ?? null;
+  const entry =
+    entries.find((e: any) => {
+      const abs = typeof e?.absPath === "string" ? String(e.absPath) : "";
+      if (requestedAbs && abs && path.resolve(abs) === requestedAbs) return true;
+      if (safeRelPath(e?.relPath) === normalizedRelPath) return true;
+      if (!abs) return false;
+      const relFromCwd = safeRelPath(path.relative(resolvedSnapshotCwd, abs));
+      return relFromCwd === normalizedRelPath;
+    }) ?? null;
   if (!entry) return { ok: false, reason: "snapshot_entry_not_found" };
 
   const root = ensureCodexSnapshotsRoot();

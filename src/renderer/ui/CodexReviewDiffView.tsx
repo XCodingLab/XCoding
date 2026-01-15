@@ -46,6 +46,42 @@ function isMetaLine(line: string) {
   );
 }
 
+function countTextLines(text: string) {
+  const t = String(text ?? "").replace(/\r\n/g, "\n");
+  if (!t) return 0;
+  const parts = t.split("\n");
+  if (parts.length && parts[parts.length - 1] === "") parts.pop();
+  return parts.length;
+}
+
+function normalizeKind(kind?: string) {
+  return String(kind ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+}
+
+function isAddKind(kind?: string) {
+  const k = normalizeKind(kind);
+  if (!k) return false;
+  if (k === "add" || k === "create" || k === "new" || k === "added") return true;
+  if (k === "addfile" || k === "createfile" || k === "newfile") return true;
+  if (k.includes("add") && k.includes("file")) return true;
+  if (k.includes("create") && k.includes("file")) return true;
+  if (k.includes("new") && k.includes("file")) return true;
+  return false;
+}
+
+function isDeleteKind(kind?: string) {
+  const k = normalizeKind(kind);
+  if (!k) return false;
+  if (k === "delete" || k === "remove" || k === "rm" || k === "del" || k === "deleted" || k === "removed") return true;
+  if (k === "deletefile" || k === "removefile" || k === "deletedfile") return true;
+  if (k.includes("delete") && k.includes("file")) return true;
+  if (k.includes("remove") && k.includes("file")) return true;
+  return false;
+}
+
 function toOriginalAndModified(diffText: string, kind?: string) {
   const raw = String(diffText ?? "").replace(/\r\n/g, "\n");
   const lines = raw.split("\n");
@@ -84,12 +120,8 @@ function toOriginalAndModified(diffText: string, kind?: string) {
     modified.push(normalized);
   }
 
-  const kindValue = String(kind ?? "").toLowerCase();
-  const isAdd = kindValue === "addfile" || (kindValue.includes("add") && kindValue.includes("file"));
-  const isDelete = kindValue === "deletefile" || (kindValue.includes("delete") && kindValue.includes("file"));
-
-  if (isAdd) return { original: "", modified: modified.join("\n") };
-  if (isDelete) return { original: original.join("\n"), modified: "" };
+  if (isAddKind(kind)) return { original: "", modified: modified.join("\n") };
+  if (isDeleteKind(kind)) return { original: original.join("\n"), modified: "" };
   return { original: original.join("\n"), modified: modified.join("\n") };
 }
 
@@ -101,19 +133,25 @@ function stripMetaAndHunks(diffText: string) {
     .filter((l) => l && !isMetaLine(l) && !l.startsWith("@@"));
 }
 
+function reverseDiffText(diffText: string) {
+  const raw = String(diffText ?? "").replace(/\r\n/g, "\n");
+  return raw
+    .split("\n")
+    .map((line) => {
+      if (!line) return line;
+      if (line.startsWith("+++ ") || line.startsWith("--- ")) return line;
+      if (line.startsWith("+")) return `-${line.slice(1)}`;
+      if (line.startsWith("-")) return `+${line.slice(1)}`;
+      return line;
+    })
+    .join("\n");
+}
+
 function applyLineDiffToOriginal(originalText: string, diffText: string, kind?: string) {
-  const kindValue = String(kind ?? "").toLowerCase();
-  const isAdd = kindValue === "addfile" || (kindValue.includes("add") && kindValue.includes("file"));
-  const isDelete = kindValue === "deletefile" || (kindValue.includes("delete") && kindValue.includes("file"));
-  if (isAdd) {
-    const lines = stripMetaAndHunks(diffText);
-    const modified = lines
-      .filter((l) => l.startsWith("+"))
-      .map((l) => l.slice(1))
-      .join("\n");
-    return { original: "", modified };
+  if (isAddKind(kind)) {
+    return toOriginalAndModified(diffText, kind);
   }
-  if (isDelete) return { original: originalText, modified: "" };
+  if (isDeleteKind(kind)) return { original: originalText, modified: "" };
 
   const originalLines = String(originalText ?? "").replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
@@ -196,6 +234,7 @@ export default function CodexReviewDiffView({
   const { t } = useI18n();
   const { monacoThemeName } = useUiTheme();
   const [selectedPath, setSelectedPath] = useState("");
+  const [countsByPath, setCountsByPath] = useState<Record<string, { added: number; removed: number }>>({});
   const [diffState, setDiffState] = useState<{
     loading: boolean;
     error?: string;
@@ -218,6 +257,54 @@ export default function CodexReviewDiffView({
   const language = useMemo(() => guessLanguageIdFromPath(selected?.path ?? ""), [selected?.path]);
 
   useEffect(() => {
+    let cancelled = false;
+    setCountsByPath({});
+    const targets = files.filter((f) => {
+      const plus = Number(f.added ?? 0);
+      const minus = Number(f.removed ?? 0);
+      if (isAddKind(f.kind) && plus === 0) return true;
+      if (isDeleteKind(f.kind) && minus === 0) return true;
+      return false;
+    });
+    if (!targets.length) return () => {};
+
+    void (async () => {
+      const pairs = await Promise.all(
+        targets.map(async (f) => {
+          const compute = (originalText: string, modifiedText: string) => {
+            if (isAddKind(f.kind)) return { path: f.path, added: countTextLines(modifiedText), removed: 0 };
+            if (isDeleteKind(f.kind)) return { path: f.path, added: 0, removed: countTextLines(originalText) };
+            return null;
+          };
+
+          const res = await window.xcoding.codex.turnFileDiff({ threadId, turnId, path: f.path });
+          if (res.ok && !res.isBinary && !res.truncated) {
+            const computed = compute(res.original, res.modified);
+            const needsGitFallback = (isDeleteKind(f.kind) && !String(res.original ?? "").trim()) || (isAddKind(f.kind) && !String(res.modified ?? "").trim());
+            if (computed && !needsGitFallback) return computed;
+          }
+
+          const gitRes = await window.xcoding.project.gitFileDiff({ slot, path: f.path, mode: "working" });
+          if (gitRes.ok && !gitRes.isBinary && !gitRes.truncated) return compute(String(gitRes.original ?? ""), String(gitRes.modified ?? ""));
+
+          return null;
+        })
+      );
+      if (cancelled) return;
+      const next: Record<string, { added: number; removed: number }> = {};
+      for (const p of pairs) {
+        if (!p) continue;
+        next[p.path] = { added: p.added, removed: p.removed };
+      }
+      setCountsByPath(next);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [files, slot, threadId, turnId]);
+
+  useEffect(() => {
     void ensureMonacoLanguage(language).catch(() => {});
   }, [language]);
 
@@ -232,28 +319,123 @@ export default function CodexReviewDiffView({
       const res = await window.xcoding.codex.turnFileDiff({ threadId, turnId, path: selected.path });
       if (cancelled) return;
       if (res.ok) {
+        const kind = selected.kind;
+        if (res.isBinary) {
+          setDiffState({ loading: false, error: undefined, original: "", modified: "", truncated: false, isBinary: true });
+          return;
+        }
+
+        let original = res.original ?? "";
+        let modified = res.modified ?? "";
+        let truncated = Boolean(res.truncated);
+
+        if (isDeleteKind(kind)) {
+          // During running turns the file may still exist on disk; force a delete-style diff.
+          modified = "";
+          if (!original.trim()) {
+            const gitRes = await window.xcoding.project.gitFileDiff({ slot, path: selected.path, mode: "working" });
+            if (gitRes.ok && !gitRes.isBinary) {
+              original = String(gitRes.original ?? "");
+              truncated = truncated || Boolean(gitRes.truncated);
+            }
+          }
+        } else if (isAddKind(kind)) {
+          original = "";
+          // During running turns the file may not exist yet; reconstruct from diff text if possible.
+          if (!modified.trim()) {
+            const computed = applyLineDiffToOriginal("", selected.diff ?? "", kind);
+            if (computed.modified) modified = computed.modified;
+          }
+          // If we reconstructed from diff, it is not truncated.
+          if (modified && !res.modified?.trim()) truncated = false;
+        }
+
         setDiffState({
           loading: false,
           error: undefined,
-          original: res.original ?? "",
-          modified: res.modified ?? "",
-          truncated: Boolean(res.truncated),
-          isBinary: Boolean(res.isBinary)
+          original,
+          modified,
+          truncated,
+          isBinary: false
         });
         return;
       }
 
       const fileRes = await window.xcoding.project.readFile({ slot, path: selected.path });
       if (cancelled) return;
-      const baseOriginal = fileRes.ok ? String(fileRes.content ?? "") : "";
-      const computed = applyLineDiffToOriginal(baseOriginal, selected.diff ?? "", selected.kind);
+      const isAdd = isAddKind(selected.kind);
+      const isDelete = isDeleteKind(selected.kind);
+      const modifiedText = fileRes.ok ? String(fileRes.content ?? "") : "";
+
+      if (fileRes.ok && fileRes.isBinary) {
+        setDiffState({ loading: false, error: undefined, original: "", modified: "", truncated: false, isBinary: true });
+        return;
+      }
+
+      if (isAdd) {
+        const computed = applyLineDiffToOriginal("", selected.diff ?? "", selected.kind);
+        let modified = fileRes.ok ? modifiedText : computed.modified;
+        let truncated = Boolean(fileRes.ok ? fileRes.truncated : false);
+        if (!fileRes.ok && !modified.trim()) {
+          const gitRes = await window.xcoding.project.gitFileDiff({ slot, path: selected.path, mode: "working" });
+          if (gitRes.ok && !gitRes.isBinary) {
+            modified = String(gitRes.modified ?? "") || modified;
+            truncated = truncated || Boolean(gitRes.truncated);
+          }
+        }
+        setDiffState({
+          loading: false,
+          error: undefined,
+          original: "",
+          modified,
+          truncated,
+          isBinary: false
+        });
+        return;
+      }
+
+      if (isDelete) {
+        let original = "";
+        let truncated = false;
+        if (fileRes.ok) {
+          original = modifiedText;
+          truncated = Boolean(fileRes.truncated);
+        } else {
+          const computed = toOriginalAndModified(selected.diff ?? "", selected.kind);
+          original = computed.original;
+          if (!original.trim()) {
+            const gitRes = await window.xcoding.project.gitFileDiff({ slot, path: selected.path, mode: "working" });
+            if (gitRes.ok && !gitRes.isBinary) {
+              original = String(gitRes.original ?? "");
+              truncated = truncated || Boolean(gitRes.truncated);
+            }
+          }
+        }
+        setDiffState({
+          loading: false,
+          error: undefined,
+          original,
+          modified: "",
+          truncated,
+          isBinary: false
+        });
+        return;
+      }
+
+      const computed = fileRes.ok
+        ? (() => {
+          const reversed = reverseDiffText(selected.diff ?? "");
+          const reconstructedOriginal = applyLineDiffToOriginal(modifiedText, reversed, "updatefile");
+          return { original: reconstructedOriginal.modified, modified: modifiedText, truncated: Boolean(fileRes.truncated) };
+        })()
+        : toOriginalAndModified(selected.diff ?? "", selected.kind);
       setDiffState({
         loading: false,
         // Snapshot is optional for Codex reviews; always fall back to diff text if needed.
         error: undefined,
         original: computed.original,
         modified: computed.modified,
-        truncated: false,
+        truncated: Boolean((computed as any).truncated ?? false),
         isBinary: false
       });
     })();
@@ -275,8 +457,9 @@ export default function CodexReviewDiffView({
         <div className="h-[calc(100%-2rem)] overflow-auto p-1">
           {files.map((f) => {
             const active = selected?.path === f.path;
-            const plus = Number(f.added ?? 0);
-            const minus = Number(f.removed ?? 0);
+            const override = countsByPath[f.path];
+            const plus = Number(override?.added ?? f.added ?? 0);
+            const minus = Number(override?.removed ?? f.removed ?? 0);
             return (
               <button
                 key={f.path}

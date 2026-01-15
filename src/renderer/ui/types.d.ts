@@ -139,6 +139,8 @@ declare global {
       window: {
         create: (payload?: { slot?: number; mode?: "single" | "multi" }) => Promise<{ ok: boolean; windowId?: number; reused?: boolean; reason?: string }>;
         getDetachedSlots: () => Promise<{ ok: boolean; slots?: number[]; reason?: string }>;
+        attachSlot: (slot: number) => Promise<{ ok: boolean; reason?: string }>;
+        focus: () => Promise<{ ok: boolean; reason?: string }>;
         minimize: () => Promise<{ ok: boolean; reason?: string }>;
         maximizeToggle: () => Promise<{ ok: boolean; maximized?: boolean; reason?: string }>;
         close: () => Promise<{ ok: boolean; reason?: string }>;
@@ -522,6 +524,7 @@ declare global {
       os: {
         copyText: (text: string) => Promise<{ ok: boolean; reason?: string }>;
         openExternal: (url: string) => Promise<{ ok: boolean; reason?: string }>;
+        revealInFileManager: (path: string) => Promise<{ ok: boolean; reason?: string }>;
       };
     };
   }

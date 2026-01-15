@@ -6,7 +6,6 @@ export function useCodexProjectScopedState({
   isHistoryOpen,
   activeThreadId,
   query,
-  isDiffPanelOpen,
   input,
   attachments,
   isPlusMenuOpen,
@@ -14,7 +13,6 @@ export function useCodexProjectScopedState({
   setIsHistoryOpen,
   setActiveThreadId,
   setQuery,
-  setIsDiffPanelOpen,
   setInput,
   setAttachments,
   setIsPlusMenuOpen,
@@ -27,7 +25,6 @@ export function useCodexProjectScopedState({
   isHistoryOpen: boolean;
   activeThreadId: string | null;
   query: string;
-  isDiffPanelOpen: boolean;
   input: string;
   attachments: ComposerAttachment[];
   isPlusMenuOpen: boolean;
@@ -35,7 +32,6 @@ export function useCodexProjectScopedState({
   setIsHistoryOpen: (v: boolean) => void;
   setActiveThreadId: (v: string | null) => void;
   setQuery: (v: string) => void;
-  setIsDiffPanelOpen: (v: boolean) => void;
   setInput: (v: string) => void;
   setAttachments: (v: ComposerAttachment[]) => void;
   setIsPlusMenuOpen: (v: boolean) => void;
@@ -51,7 +47,6 @@ export function useCodexProjectScopedState({
         isHistoryOpen: boolean;
         activeThreadId: string | null;
         query: string;
-        isDiffPanelOpen: boolean;
         input: string;
         attachments: ComposerAttachment[];
         isPlusMenuOpen: boolean;
@@ -70,7 +65,6 @@ export function useCodexProjectScopedState({
       isHistoryOpen,
       activeThreadId,
       query,
-      isDiffPanelOpen,
       input,
       attachments,
       isPlusMenuOpen,
@@ -83,7 +77,6 @@ export function useCodexProjectScopedState({
         isHistoryOpen: true,
         activeThreadId: null,
         query: "",
-        isDiffPanelOpen: false,
         input: "",
         attachments: [],
         isPlusMenuOpen: false,
@@ -93,7 +86,6 @@ export function useCodexProjectScopedState({
     setIsHistoryOpen((restored as any).isHistoryOpen ?? true);
     setActiveThreadId(restored.activeThreadId);
     setQuery(restored.query);
-    setIsDiffPanelOpen(restored.isDiffPanelOpen);
     setInput(restored.input);
     setAttachments(restored.attachments);
     setIsPlusMenuOpen(restored.isPlusMenuOpen);
@@ -105,4 +97,3 @@ export function useCodexProjectScopedState({
     lastProjectKeyRef.current = nextKey;
   }, [projectKey]);
 }
-

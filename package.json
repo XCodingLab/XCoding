@@ -2,7 +2,7 @@
   "name": "xcoding",
   "productName": "XCoding",
   "private": true,
-  "version": "0.0.4-beta.1",
+  "version": "0.0.7-beta.1",
   "type": "module",
   "main": "dist/main/main.cjs",
   "scripts": {
