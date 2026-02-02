@@ -135,6 +135,14 @@ type Props = {
   lastStderr: string;
   isBusy: boolean;
   isTurnInProgress: boolean;
+  subAgentsSummary?: Array<{
+    threadId: string;
+    prompt?: string | null;
+    started: boolean;
+    closed: boolean;
+    status: string;
+    message?: string | null;
+  }> | null;
   liveChangesSummary?: {
     threadId: string;
     turnId: string;
@@ -207,6 +215,7 @@ export default function Composer({
   lastStderr,
   isBusy,
   isTurnInProgress,
+  subAgentsSummary,
   liveChangesSummary,
   input,
   onChangeInput,
@@ -254,6 +263,8 @@ export default function Composer({
     return `${Math.round(bytes)}B`;
   };
   const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [subAgentsOpen, setSubAgentsOpen] = useState(false);
+  const [subAgentResultOpenByThreadId, setSubAgentResultOpenByThreadId] = useState<Record<string, boolean>>({});
   const [slashQuery, setSlashQuery] = useState("");
   const [slashView, setSlashView] = useState<"root">("root");
   const [skills, setSkills] = useState<Array<{ name: string; description: string; shortDescription?: string | null; path: string }>>([]);
@@ -288,6 +299,28 @@ export default function Composer({
     if (effort === "xhigh") return "XHigh";
     return effort.charAt(0).toUpperCase() + effort.slice(1);
   }, [effort]);
+
+  const normalizedSubAgents = useMemo(() => (Array.isArray(subAgentsSummary) ? subAgentsSummary : []), [subAgentsSummary]);
+  const runningSubAgentsCount = useMemo(() => {
+    let running = 0;
+    for (const a of normalizedSubAgents) {
+      const status = String(a?.status ?? "").toLowerCase();
+      const isClosed = Boolean(a?.closed);
+      const isDone = status === "completed" || status === "done" || status.includes("complete");
+      const isError = status.includes("error") || status.includes("fail");
+      if (!isClosed && !isDone && !isError) running += 1;
+    }
+    return running;
+  }, [normalizedSubAgents]);
+
+  useEffect(() => {
+    if (runningSubAgentsCount > 0) setSubAgentsOpen(true);
+  }, [runningSubAgentsCount]);
+
+  const formatAgentStatusLabel = (raw: string) => {
+    const s = String(raw ?? "").trim();
+    return s || "unknown";
+  };
 
   useEffect(() => {
     const nextTurnId = String(liveChangesSummary?.turnId ?? "");
@@ -707,6 +740,105 @@ export default function Composer({
       ) : null}
 
       <StatusModal open={isStatusOpen} threadId={threadId} tokenUsage={tokenUsage} rateLimits={rateLimits} onClose={() => setIsStatusOpen(false)} />
+
+      {normalizedSubAgents.length ? (
+        <div className="mb-2">
+          <button
+            type="button"
+            className={[
+              "flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-input-background)] px-3 py-2",
+              "text-[11px] text-[var(--vscode-foreground)] hover:bg-[var(--vscode-toolbar-hoverBackground)]"
+            ].join(" ")}
+            onClick={() => setSubAgentsOpen((v) => !v)}
+            aria-expanded={subAgentsOpen}
+          >
+            <div className="min-w-0 truncate font-semibold">
+              {normalizedSubAgents.length} Sub agent{normalizedSubAgents.length === 1 ? "" : "s"}
+              {runningSubAgentsCount ? (
+                <span className="ml-2 rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--vscode-descriptionForeground)]">
+                  {runningSubAgentsCount} running
+                </span>
+              ) : null}
+            </div>
+            <ChevronDown
+              className={[
+                "h-3.5 w-3.5 text-[var(--vscode-descriptionForeground)] transition-transform duration-150",
+                subAgentsOpen ? "" : "-rotate-90"
+              ].join(" ")}
+            />
+          </button>
+
+          {subAgentsOpen ? (
+            <div className="mt-1 overflow-hidden rounded-lg border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)]">
+              <div className="max-h-48 overflow-auto p-2">
+                <div className="grid gap-2">
+                  {normalizedSubAgents.map((a) => {
+                    const threadId = String(a?.threadId ?? "");
+                    const shortId = threadId ? `${threadId.slice(0, 8)}…${threadId.slice(-4)}` : "(unknown)";
+                    const threadKey = threadId || shortId;
+                    const status = formatAgentStatusLabel(String(a?.status ?? ""));
+                    const s = status.toLowerCase();
+                    const isDone = Boolean(a?.closed) || s === "completed" || s === "done" || s.includes("complete");
+                    const isError = s.includes("error") || s.includes("fail");
+                    const badgeCls = isError
+                      ? "text-[color-mix(in_srgb,#f14c4c_90%,white)] bg-[color-mix(in_srgb,#f14c4c_10%,transparent)]"
+                      : isDone
+                        ? "text-[color-mix(in_srgb,#89d185_90%,white)] bg-[color-mix(in_srgb,#89d185_10%,transparent)]"
+                        : "text-[color-mix(in_srgb,#cca700_90%,white)] bg-[color-mix(in_srgb,#cca700_10%,transparent)]";
+                    const prompt = typeof a?.prompt === "string" && a.prompt.trim() ? a.prompt.trim() : "";
+                    const message = typeof a?.message === "string" && a.message.trim() ? a.message.trim() : "";
+                    const isResultOpen =
+                      typeof subAgentResultOpenByThreadId[threadKey] === "boolean" ? subAgentResultOpenByThreadId[threadKey] : isDone;
+
+                    return (
+                      <div key={threadKey} className="rounded border border-[var(--vscode-panel-border)] bg-black/5 px-2 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 truncate text-[11px] font-semibold text-[var(--vscode-foreground)]" title={threadId}>
+                            {shortId}
+                          </div>
+                          <span className={["shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold", badgeCls].join(" ")} title={status}>
+                            {status}
+                          </span>
+                        </div>
+
+                        <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-[var(--vscode-descriptionForeground)]">
+                          <span className="rounded-full bg-black/10 px-2 py-0.5">{a?.started ? "spawned" : "unknown start"}</span>
+                          <span className="rounded-full bg-black/10 px-2 py-0.5">{a?.closed ? "closed" : "not closed"}</span>
+                        </div>
+
+                        {prompt ? (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-[10px] font-semibold text-[var(--vscode-descriptionForeground)]">prompt</summary>
+                            <div className="mt-1 whitespace-pre-wrap rounded border border-[var(--vscode-panel-border)] bg-black/10 p-2 text-[11px] text-[var(--vscode-foreground)]">
+                              {prompt}
+                            </div>
+                          </details>
+                        ) : null}
+
+                        {message ? (
+                          <details
+                            className="mt-2"
+                            open={isResultOpen}
+                            onToggle={(e) => {
+                              const next = (e.currentTarget as HTMLDetailsElement).open;
+                              setSubAgentResultOpenByThreadId((prev) => ({ ...prev, [threadKey]: next }));
+                            }}
+                          >
+                            <summary className="cursor-pointer text-[10px] font-semibold text-[var(--vscode-descriptionForeground)]">result</summary>
+                            <div className="mt-1 whitespace-pre-wrap rounded border border-[var(--vscode-panel-border)] bg-black/10 p-2 text-[11px] text-[var(--vscode-foreground)]">
+                              {message}
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {liveChangesSummary?.files?.length ? (
         <div className="mb-2">

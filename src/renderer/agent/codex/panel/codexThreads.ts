@@ -24,11 +24,32 @@ export function createCodexThreadsActions({
   setActiveThreadId: (v: string | null) => void;
   hydratedSessionThreadIdsRef: MutableRefObject<Set<string>>;
 }) {
+  const allSourceKinds = [
+    "cli",
+    "vscode",
+    "exec",
+    "appServer",
+    "subAgent",
+    "subAgentReview",
+    "subAgentCompact",
+    "subAgentThreadSpawn",
+    "subAgentOther",
+    "unknown"
+  ];
+
   async function refreshThreads() {
     setIsThreadsLoading(true);
     try {
-      const res = await window.xcoding.codex.threadList({ cursor: null, limit: 100 });
+      const attempt = async (includeAllSources: boolean) => {
+        const base = { cursor: null, limit: 100 } as any;
+        if (includeAllSources) base.sourceKinds = allSourceKinds;
+        return await window.xcoding.codex.threadList(base);
+      };
+
+      let res = await attempt(true);
+      if (!res.ok) res = await attempt(false);
       if (!res.ok) throw new Error(res.reason || "thread_list_failed");
+
       const data = Array.isArray(res.result?.data) ? (res.result.data as any[]) : [];
       const threads: ThreadSummary[] = data
         .map((t) => ({
@@ -37,6 +58,7 @@ export function createCodexThreadsActions({
           previewText: extractPromptRequest(String(t.preview ?? "")),
           title: extractPromptRequest(String(t.preview ?? "")) || String(t.preview ?? ""),
           modelProvider: typeof t.modelProvider === "string" ? t.modelProvider : undefined,
+          source: typeof t.source === "undefined" ? undefined : t.source,
           createdAt: typeof t.createdAt === "number" ? t.createdAt : undefined,
           path: typeof t.path === "string" ? t.path : undefined,
           cwd: typeof t.cwd === "string" ? t.cwd : undefined
@@ -189,6 +211,7 @@ export function createCodexThreadsActions({
         preview: summary?.preview ?? "",
         title: summary?.title ?? (summary?.previewText ?? summary?.preview ?? ""),
         modelProvider: summary?.modelProvider,
+        source: summary?.source,
         createdAt: summary?.createdAt,
         path: summary?.path,
         cwd: summary?.cwd,
@@ -217,4 +240,3 @@ export function createCodexThreadsActions({
 
   return { refreshThreads, openThread, archiveThread };
 }
-

@@ -1,7 +1,7 @@
 import { Archive, RefreshCcw } from "lucide-react";
 import { useEffect } from "react";
 import { extractPromptRequest } from "../prompt";
-import { formatThreadTime, type ThreadSummary } from "../panel/types";
+import { formatThreadSourceBadge, formatThreadTime, type ThreadSummary } from "../panel/types";
 
 type Props = {
   open: boolean;
@@ -95,6 +95,7 @@ export default function CodexHistoryOverlay({
               thread.title ??
               (thread.preview ? extractPromptRequest(thread.preview) : "") ??
               "";
+            const sourceBadge = formatThreadSourceBadge((thread as any).source);
 
             return (
               <div
@@ -124,7 +125,20 @@ export default function CodexHistoryOverlay({
                       isActive ? "text-[var(--vscode-list-activeSelectionForeground)]" : "text-[var(--vscode-foreground)]"
                     ].join(" ")}
                   >
-                    {preview || thread.preview || "(no preview)"}
+                    <span>{preview || thread.preview || "(no preview)"}</span>
+                    {sourceBadge ? (
+                      <span
+                        className={[
+                          "ml-2 inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] leading-none",
+                          isActive
+                            ? "bg-black/20 text-[var(--vscode-list-activeSelectionForeground)]"
+                            : "bg-black/10 text-[var(--vscode-descriptionForeground)]"
+                        ].join(" ")}
+                        title={sourceBadge}
+                      >
+                        {sourceBadge}
+                      </span>
+                    ) : null}
                   </div>
                   <div
                     className={[

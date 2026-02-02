@@ -40,6 +40,7 @@ export function normalizeThread(thread: any): ThreadView {
     preview,
     title,
     modelProvider: typeof thread?.modelProvider === "string" ? thread.modelProvider : undefined,
+    source: typeof thread?.source === "undefined" ? undefined : thread.source,
     createdAt: typeof thread?.createdAt === "number" ? thread.createdAt : undefined,
     path: typeof thread?.path === "string" ? thread.path : undefined,
     cwd: typeof thread?.cwd === "string" ? thread.cwd : undefined,
@@ -47,4 +48,3 @@ export function normalizeThread(thread: any): ThreadView {
     latestDiff
   };
 }
-

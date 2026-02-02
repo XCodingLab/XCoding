@@ -8,6 +8,7 @@ export type ThreadSummary = {
   previewText?: string;
   title?: string;
   modelProvider?: string;
+  source?: any;
   createdAt?: number;
   path?: string;
   cwd?: string;
@@ -133,6 +134,39 @@ export function formatThreadTime(createdAt?: number) {
   const ms = createdAt < 10_000_000_000 ? createdAt * 1000 : createdAt;
   const d = new Date(ms);
   return d.toLocaleString();
+}
+
+function tryReadSubAgentKind(source: any): string | null {
+  if (!source) return null;
+  if (typeof source === "string") {
+    const s = source.trim();
+    if (/^subagent/i.test(s)) return s.replace(/^subagent[_/:\-\s]*/i, "") || "subagent";
+    return null;
+  }
+
+  if (typeof source !== "object") return null;
+  const payload = (source as any).subAgent;
+  if (!payload) return null;
+  if (typeof payload === "string") return payload.trim() || "subagent";
+  if (typeof payload === "object") {
+    // `SubAgentSource::ThreadSpawn { ... }` serializes like:
+    // { subAgent: { thread_spawn: { parent_thread_id, depth } } }
+    if ((payload as any).thread_spawn) return "thread_spawn";
+    // Sometimes code may send camelCase.
+    if ((payload as any).threadSpawn) return "thread_spawn";
+    if (typeof (payload as any).other === "string") return (payload as any).other.trim() || "other";
+  }
+  return "subagent";
+}
+
+export function formatThreadSourceBadge(source: any): string {
+  const kind = tryReadSubAgentKind(source);
+  if (!kind) return "";
+  const k = kind.toLowerCase();
+  if (k === "review" || k === "subagentreview") return "SubAgent/review";
+  if (k === "compact" || k === "subagentcompact") return "SubAgent/compact";
+  if (k === "thread_spawn" || k === "threadspawn") return "SubAgent/spawn";
+  return `SubAgent/${kind}`;
 }
 
 export type Props = {
