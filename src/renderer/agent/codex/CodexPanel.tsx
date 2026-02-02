@@ -515,6 +515,84 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
     return null;
   }, [activeThread, version]);
 
+  const subAgentsSummary = useMemo(() => {
+    if (!activeThread) return [];
+    const turns = Array.isArray(activeThread.turns) ? activeThread.turns : [];
+    const byThreadId = new Map<
+      string,
+      {
+        threadId: string;
+        prompt?: string | null;
+        started: boolean;
+        closed: boolean;
+        status: string;
+        message?: string | null;
+        firstSeenOrder: number;
+        lastSeenOrder: number;
+      }
+    >();
+    let order = 0;
+
+    for (const turn of turns) {
+      const items = Array.isArray((turn as any)?.items) ? (turn as any).items : [];
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        if (String((item as any).type ?? "") !== "collabAgentToolCall") continue;
+        const tool = String((item as any).tool ?? "");
+        if (tool !== "spawnAgent" && tool !== "closeAgent") continue;
+
+        const receiverThreadIds = Array.isArray((item as any).receiverThreadIds)
+          ? ((item as any).receiverThreadIds as any[]).map((x) => String(x ?? "")).filter(Boolean)
+          : [];
+        if (!receiverThreadIds.length) continue;
+        const agentsStates = (item as any).agentsStates && typeof (item as any).agentsStates === "object" ? (item as any).agentsStates : {};
+        const prompt = typeof (item as any).prompt === "string" ? String((item as any).prompt) : null;
+
+        for (const receiverThreadId of receiverThreadIds) {
+          const stateForReceiver = agentsStates?.[receiverThreadId] && typeof agentsStates[receiverThreadId] === "object" ? agentsStates[receiverThreadId] : null;
+          const rawStateStatus = typeof stateForReceiver?.status === "string" ? String(stateForReceiver.status) : "";
+          const toolStatus = typeof (item as any).status === "string" ? String((item as any).status) : "";
+          const status = (() => {
+            // Prefer agent state when present; tool call completion is not the same as agent completion.
+            if (rawStateStatus) return rawStateStatus;
+            if (tool === "spawnAgent") return "spawned";
+            if (tool === "closeAgent") return toolStatus || "closed";
+            return toolStatus || "unknown";
+          })();
+          const message = typeof stateForReceiver?.message === "string" ? String(stateForReceiver.message) : null;
+
+          const existing =
+            byThreadId.get(receiverThreadId) ??
+            (() => {
+              const fresh = {
+                threadId: receiverThreadId,
+                prompt: null,
+                started: false,
+                closed: false,
+                status,
+                message: null,
+                firstSeenOrder: order,
+                lastSeenOrder: order
+              };
+              byThreadId.set(receiverThreadId, fresh);
+              return fresh;
+            })();
+
+          existing.lastSeenOrder = order;
+          if (!existing.started && tool === "spawnAgent") existing.started = true;
+          if (tool === "closeAgent") existing.closed = true;
+          if (prompt && !existing.prompt && tool === "spawnAgent") existing.prompt = prompt;
+          if (message && tool === "closeAgent") existing.message = message;
+          existing.status = status || existing.status;
+        }
+
+        order += 1;
+      }
+    }
+
+    return Array.from(byThreadId.values()).sort((a, b) => a.firstSeenOrder - b.firstSeenOrder || a.lastSeenOrder - b.lastSeenOrder);
+  }, [activeThread, version]);
+
   const tokenUsage = activeThreadId ? (storeRef.current.tokenUsageByThreadId?.[activeThreadId] ?? null) : null;
   const rateLimits = storeRef.current.rateLimits ?? null;
 
@@ -640,6 +718,7 @@ export default function CodexPanel({ slot, projectRootPath, onOpenUrl, onOpenIma
         lastStderr={lastStderr}
         isBusy={isBusy}
         isTurnInProgress={isTurnInProgress}
+        subAgentsSummary={subAgentsSummary}
         liveChangesSummary={liveChangesSummary}
         input={input}
         onChangeInput={setInput}

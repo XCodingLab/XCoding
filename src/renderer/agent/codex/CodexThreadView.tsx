@@ -259,7 +259,17 @@ function shouldShowThinkingPlaceholder(turn: TurnView) {
   if (getTurnStatusLabel(turn.status).kind !== "running") return false;
   const items = Array.isArray(turn.items) ? turn.items : [];
   if (!items.length) return true;
-  const last = items[items.length - 1];
+  let last: any | null = null;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (String((it as any)?.type ?? "") === "collabAgentToolCall") {
+      const tool = String((it as any)?.tool ?? "");
+      if (tool === "spawnAgent" || tool === "closeAgent") continue;
+    }
+    last = it;
+    break;
+  }
+  if (!last) return true;
   const lastType = String((last as any)?.type ?? "");
   if (lastType === "agentMessage") return false;
   if (lastType === "userMessage") return true;
@@ -537,10 +547,29 @@ export default function CodexThreadView({
     const turnsCount = turns.length;
     let itemsCount = 0;
     let lastLen = 0;
-    for (const t of turns) itemsCount += Array.isArray(t.items) ? t.items.length : 0;
+    for (const t of turns) {
+      const its = Array.isArray(t.items) ? t.items : [];
+      for (const it of its) {
+        const ty = String((it as any)?.type ?? "");
+        if (ty === "collabAgentToolCall") {
+          const tool = String((it as any)?.tool ?? "");
+          if (tool === "spawnAgent" || tool === "closeAgent") continue;
+        }
+        itemsCount += 1;
+      }
+    }
     const lastTurn = turns.length ? turns[turns.length - 1] : null;
     if (lastTurn && Array.isArray(lastTurn.items) && lastTurn.items.length) {
-      const lastItem = lastTurn.items[lastTurn.items.length - 1];
+      let lastItem: any | null = null;
+      for (let i = lastTurn.items.length - 1; i >= 0; i--) {
+        const it = lastTurn.items[i];
+        if (String((it as any)?.type ?? "") === "collabAgentToolCall") {
+          const tool = String((it as any)?.tool ?? "");
+          if (tool === "spawnAgent" || tool === "closeAgent") continue;
+        }
+        lastItem = it;
+        break;
+      }
       const type = String((lastItem as any)?.type ?? "");
       if (type === "agentMessage") lastLen = String((lastItem as any)?.text ?? "").length;
       else if (type === "commandExecution") lastLen = readCommandExecutionOutput(lastItem).length;
@@ -578,6 +607,10 @@ export default function CodexThreadView({
     for (const turn of visibleTurns) {
       const items = Array.isArray(turn.items) ? turn.items : [];
       items.forEach((item: any, idx: number) => {
+        if (String((item as any)?.type ?? "") === "collabAgentToolCall") {
+          const tool = String((item as any)?.tool ?? "");
+          if (tool === "spawnAgent" || tool === "closeAgent") return;
+        }
         const itemId = String(item?.id ?? `${turn.id}:${idx}`);
         rows.push({ turn, item, itemId, rowId: `${turn.id}:${itemId}`, type: String(item?.type ?? "unknown") });
       });

@@ -81,6 +81,6 @@ The default proxy URL format is: `https://<proxy>/<full-url>` (e.g. `https://gh-
 export CODEX_GH_PROXY_FORMAT="query"
 ```
 
-> Note: Codex release tags are commonly `rust-v<version>` (e.g. `rust-v0.77.0`). The script supports both `rust-v*` and `v*` tag formats.
+> Note: Codex release tags are commonly `rust-v<version>` (e.g. `rust-v0.93.0`). The script supports both `rust-v*` and `v*` tag formats.
 
 > Note: Binaries under this folder are ignored by `.gitignore` and will not be committed.

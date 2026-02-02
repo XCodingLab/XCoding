@@ -74,6 +74,11 @@ function shouldProxyUrl(url) {
   return url.startsWith("https://github.com/") || url.startsWith("https://raw.githubusercontent.com/");
 }
 
+function willProxyUrl(url) {
+  const prefix = normalizeProxyPrefix(process.env.CODEX_GH_PROXY || process.env.GH_PROXY || "");
+  return Boolean(prefix) && shouldProxyUrl(url);
+}
+
 function withProxy(url) {
   const prefix = normalizeProxyPrefix(process.env.CODEX_GH_PROXY || process.env.GH_PROXY || "");
   if (!prefix) return url;
@@ -90,7 +95,13 @@ function fetchJson(url, redirectLeft = 5) {
       .get(
         withProxy(url),
         {
-          headers: githubHeaders()
+          // Avoid sending GitHub tokens to third-party proxies unless explicitly allowed.
+          headers: (() => {
+            const headers = githubHeaders();
+            const allowToken = String(process.env.CODEX_GH_PROXY_ALLOW_TOKEN || "").trim() === "1";
+            if (!allowToken && willProxyUrl(url)) delete headers.Authorization;
+            return headers;
+          })()
         },
         (res) => {
           // Follow redirects (some proxies / GitHub flows can redirect).
@@ -150,19 +161,37 @@ function selectAssetFromRelease(releaseJson, platform, arch) {
 }
 
 function download(url, destPath) {
+  return downloadWithRedirects(url, destPath, 5);
+}
+
+function downloadWithRedirects(url, destPath, redirectLeft) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(destPath);
     const request = https.get(
       withProxy(url),
       {
-        headers: githubHeaders()
+        // Avoid sending GitHub tokens to third-party proxies unless explicitly allowed.
+        headers: (() => {
+          const headers = githubHeaders();
+          const allowToken = String(process.env.CODEX_GH_PROXY_ALLOW_TOKEN || "").trim() === "1";
+          if (!allowToken && willProxyUrl(url)) delete headers.Authorization;
+          return headers;
+        })()
       },
       (res) => {
         // Follow redirects (GitHub does this a lot).
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          if (redirectLeft <= 0) {
+            file.close(() => {
+              fs.rmSync(destPath, { force: true });
+              reject(new Error("download_failed:too_many_redirects"));
+            });
+            return;
+          }
+          const nextUrl = res.headers.location.startsWith("http") ? res.headers.location : new URL(res.headers.location, url).toString();
           file.close(() => {
             fs.rmSync(destPath, { force: true });
-            download(res.headers.location, destPath).then(resolve, reject);
+            downloadWithRedirects(nextUrl, destPath, redirectLeft - 1).then(resolve, reject);
           });
           return;
         }
@@ -236,7 +265,7 @@ function extractZip(archivePath, outDir, platform) {
 function usageAndExit(message) {
   if (message) console.error(`[fetch:codex] ${message}`);
   console.error("Usage:");
-  console.error("  CODEX_VERSION=0.77.0 pnpm -s run setup:codex");
+  console.error("  CODEX_VERSION=0.93.0 pnpm -s run setup:codex");
   console.error("Options (env):");
   console.error("  CODEX_VERSION   Required. Pinned codex release version (no 'v' prefix).");
   console.error("  CODEX_REPO      Optional. Default: openai/codex");
@@ -259,6 +288,8 @@ async function main() {
   const platform = process.platform;
   const arch = process.arch;
   const exeName = isWindows(platform) ? "codex.exe" : "codex";
+  const wantedAssetName = assetNameFor(platform, arch);
+  if (!wantedAssetName) throw new Error(`unsupported_platform_arch:${platform}/${arch}`);
 
   const version = (process.env.CODEX_VERSION || "").trim() || readPinnedVersion();
   if (!version || version === "0.0.0") {
@@ -279,38 +310,46 @@ async function main() {
 
   const repo = (process.env.CODEX_REPO || "openai/codex").trim();
   const tagsToTry = [`rust-v${version}`, `v${version}`];
-  let release = null;
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xcoding-codex-"));
+  const extractDir = path.join(tmpRoot, "extract");
+  fs.mkdirSync(extractDir, { recursive: true });
+
+  let assetInfo = null;
+  let archivePath = "";
   let lastErr = null;
   for (const tag of tagsToTry) {
     const apiUrl = `https://api.github.com/repos/${repo}/releases/tags/${tag}`;
     try {
-      release = await fetchJson(apiUrl);
+      const release = await fetchJson(apiUrl);
+      const selected = selectAssetFromRelease(release, platform, arch);
+      if (selected) {
+        assetInfo = selected;
+        archivePath = path.join(tmpRoot, assetInfo.name);
+        console.log(`[fetch:codex] Downloading ${assetInfo.url}`);
+        await download(assetInfo.url, archivePath);
+        break;
+      }
+      // If we can talk to the API but didn't find the asset for some reason, fall back to a direct URL attempt below.
+    } catch (e) {
+      lastErr = e;
+      // Fall through to direct download attempt; the API can be rate-limited or blocked.
+    }
+
+    // Fallback: direct download without hitting the GitHub API (avoids rate limits).
+    try {
+      const directUrl = `https://github.com/${repo}/releases/download/${tag}/${wantedAssetName}`;
+      assetInfo = { name: wantedAssetName, url: directUrl };
+      archivePath = path.join(tmpRoot, assetInfo.name);
+      console.log(`[fetch:codex] Downloading (direct) ${assetInfo.url}`);
+      await download(assetInfo.url, archivePath);
       break;
     } catch (e) {
       lastErr = e;
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("github_api_failed:403")) {
-        usageAndExit("GitHub API rate limit exceeded. Set GITHUB_TOKEN and retry.");
-      }
-      // 404 means this tag doesn't exist; try the next tag form.
-      if (!msg.includes("github_api_failed:404")) throw e;
+      assetInfo = null;
+      archivePath = "";
     }
   }
-  if (!release) throw lastErr || new Error("github_release_not_found");
-
-  const assetInfo = selectAssetFromRelease(release, platform, arch);
-  if (!assetInfo) {
-    const names = Array.isArray(release?.assets) ? release.assets.map((a) => String(a?.name || "")).filter(Boolean) : [];
-    throw new Error(`release_asset_not_found:${platform}/${arch}\nassets:\n- ${names.join("\n- ")}`);
-  }
-
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xcoding-codex-"));
-  const archivePath = path.join(tmpRoot, assetInfo.name);
-  const extractDir = path.join(tmpRoot, "extract");
-  fs.mkdirSync(extractDir, { recursive: true });
-
-  console.log(`[fetch:codex] Downloading ${assetInfo.url}`);
-  await download(assetInfo.url, archivePath);
+  if (!assetInfo || !archivePath) throw lastErr || new Error("github_release_not_found");
 
   if (assetInfo.name.endsWith(".tar.gz")) extractTarGz(archivePath, extractDir);
   else if (assetInfo.name.endsWith(".zip")) extractZip(archivePath, extractDir, platform);
